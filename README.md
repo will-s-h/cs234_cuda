@@ -3,7 +3,6 @@
 
 
 requirements
-- ipykernel
+- install python / conda
 - cuda toolkit / cuda divers https://docs.nvidia.com/cuda/cuda-installation-guide-linux/
-- install requirements.txt
-- 
+- pip install requirements.txt and ipykernel
