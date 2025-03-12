@@ -15,11 +15,6 @@ import shutil
 def parse_cuda_cpp(response):
     output = response
     parse_error = False
-    end_think_idx = response.find('</think>')
-    if end_think_idx >= 0:
-        output = response[end_think_idx+len('</think>'):]
-    else:
-        parse_error = True
     
     CUDA_START_PHRASE, CUDA_END_PHRASE = 'cuda_source = """', '"""'
     cuda_start = output.find(CUDA_START_PHRASE) + len(CUDA_START_PHRASE)

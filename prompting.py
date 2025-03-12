@@ -8,6 +8,11 @@ Optimize the torch architecture named Model with CUDA operators! \n
 Just create the cuda_source and cpp_source strings, as in the example CUDA architecture. Remember to name the main cuda function 'forward', as is done in the example cuda code. Don't add any other thoughts, comments, or pseudocode. Just put the CUDA code inside of the cuda_source string, and create the accompanying cpp_source string that only captures the forward method and the method signature, as is given in the example CUDA output. 
 """
 
+PROBLEM_REPROMPT = """
+Please try again to optimize the torch architecture named Model with CUDA operators! \n
+Again, just create the cuda_source and cpp_source strings, as in the example CUDA architecture. Remember to name the main cuda function 'forward', as is done in the example cuda code. Don't add any other thoughts, comments, or pseudocode. Just put the CUDA code inside of the cuda_source string, and create the accompanying cpp_source string that only captures the forward method and the method signature, as is given in the example CUDA output. 
+"""
+
 
 def prompt_generate_custom_cuda(
     arc_src: str, example_torch: str, example_cuda: str, example_torch2: str, example_cuda2: str
@@ -166,3 +171,13 @@ def prompt_generate_custom_cuda_from_prompt_template(ref_arch_src: str, add_thin
 
 
     return prompt_generate_custom_cuda(arch, example_torch, example_cuda, example_torch2, example_cuda2) + ("<think>" if add_think else "")
+
+
+def prompt_generate_reprompt(msg):
+    return f"""
+The above code resulted in the following message:
+
+{msg}
+
+{PROBLEM_REPROMPT}
+"""
