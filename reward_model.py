@@ -39,21 +39,21 @@ def parse_cuda_cpp(response):
 ### rewards
 
 def reward_failed_parse(parse_exception_text):
-    return -30, "The outputted CUDA kernel was not formatted correctly. Please follow the format of the examples given!"
+    return -1, "The outputted CUDA kernel was not formatted correctly. Please follow the format of the examples given!"
 
 def reward_cuda_exception(cuda_exception_text):
     num_errors = 1
     match = re.search(r'(\d+)\s+errors? detected', cuda_exception_text)
     if match:
         num_errors = int(match.group(1))
-    return -num_errors, cuda_exception_text
+    return max(-1, -num_errors/10), cuda_exception_text
 
 def reward_harness_exception(harness_exception_text):
     # currently, return -1 regardless of text
-    return -1, harness_exception_text
+    return -1/10, harness_exception_text
 
 def reward_all_close(all_close):
-    return (5 if all_close else 0), ("Correct!" if all_close else "The output of the CUDA code did not match the PyTorch functional. Try fixing the correctness.")
+    return (1 if all_close else 0), ("Correct!" if all_close else "The output of the CUDA code did not match the PyTorch functional. Try fixing the correctness.")
 
 
 def reward(pytorch_functional, response, CACHE_DIR="./cache_dir"):

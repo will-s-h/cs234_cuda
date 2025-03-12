@@ -3,3 +3,5 @@ datasets
 huggingface_hub
 numpy
 Ninja
+bitsandbytes
+accelerate
