@@ -40,7 +40,7 @@ You are given the following torch architecture: \n
     prompt += PROBLEM_INSTRUCTION
     return prompt
 
-def prompt_generate_custom_cuda_from_prompt_template(ref_arch_src: str, add_think: bool = True) -> str:
+def prompt_generate_custom_cuda_from_prompt_template(ref_arch_src: str, add_think: bool = True, add_end_think: bool = False) -> str:
     """
     Using prompt example (an element-wise addition) for prompt templates
     The most basic form of example just to show LLM the task and the expected output format
@@ -170,7 +170,7 @@ def prompt_generate_custom_cuda_from_prompt_template(ref_arch_src: str, add_thin
     ''')
 
 
-    return prompt_generate_custom_cuda(arch, example_torch, example_cuda, example_torch2, example_cuda2) + ("<think>" if add_think else "")
+    return prompt_generate_custom_cuda(arch, example_torch, example_cuda, example_torch2, example_cuda2) + ("<think>" if add_think else "") + ("</think>" if add_end_think else "")
 
 
 def prompt_generate_reprompt(msg):
