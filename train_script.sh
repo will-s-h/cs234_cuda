@@ -1,3 +1,4 @@
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate cs234
 
 # Run the training script and shut down the VM after it completes
