@@ -5,3 +5,5 @@ numpy
 Ninja
 bitsandbytes
 accelerate
+peft
+wandb

@@ -9,6 +9,7 @@ from reward_model import reward
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
+import wandb
 
 # clear cache before starting
 gc.collect()
@@ -25,9 +26,9 @@ l1_samples = df_l1[df_l1.Kernel_Name == df_l1.Op_Name]
 
 # model
 model_q1 = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-tokenizer = AutoTokenizer.from_pretrained(model_q1,torch_dtype="auto", cache_dir=cache_dir)
-model = AutoModelForCausalLM.from_pretrained(model_q1, torch_dtype="auto", cache_dir=cache_dir)
-device = torch.device('cuda:0')
+tokenizer = AutoTokenizer.from_pretrained(model_q1,torch_dtype="auto",cache_dir=cache_dir)
+model = AutoModelForCausalLM.from_pretrained(model_q1, torch_dtype="auto", attn_implementation='flash_attention_2', cache_dir=cache_dir)
+device = torch.device('cuda:1')
 model = model.to(device)
 
 # Configure LoRA
@@ -39,6 +40,7 @@ lora_config = LoraConfig(
     bias="none",
     task_type="CAUSAL_LM",
 )
+
 # Wrap the model with LoRA. This freezes the base model parameters and injects trainable adapters.
 model = get_peft_model(model, lora_config)
 
@@ -62,10 +64,26 @@ max_new_tokens = 1_000
 problem_id = 0
 pytorch_str = l1_samples.iloc[problem_id]['PyTorch_Code_Module']
 
-
 ## create output folder
 os.makedirs('./train_outputs', exist_ok=True)
 
+# Initialize wandb
+run = wandb.init(
+    project="cs234-cuda", 
+    entity="abcisosm",
+    config = {
+        "batch_size": batch_size,
+        "reprompts": reprompts,
+        "clip_range": clip_range,
+        "num_iterations": num_iterations,
+        "ppo_epochs": ppo_epochs,
+        "log_prob_min_ratio": log_prob_min_ratio,
+        "log_prob_max_ratio": log_prob_max_ratio,
+        "lr": lr,
+        "temperature": temperature,
+        "max_new_tokens": max_new_tokens
+    }
+)
 
 # Helper function to create a mask from a list of ignore ranges.
 def create_ignore_mask(seq_len, attention_mask, ignore_ranges, dtype=torch.bfloat16):
@@ -85,7 +103,6 @@ def create_ignore_mask(seq_len, attention_mask, ignore_ranges, dtype=torch.bfloa
         end = min(seq_len, end)
         mask[start:end] = 0.0
     return mask
-
 
 # optimizer = SGD(model.parameters(), lr=lr)
 optimizer = Adafactor(model.parameters(), lr=lr)
@@ -131,11 +148,14 @@ for iteration in range(num_iterations):
         batch_outputs = [tokenizer.decode(ids[inputs.input_ids.shape[1]:], skip_special_tokens=True) for ids in gen_ids]
         for i, output_txt in enumerate(batch_outputs):
             print(f'\t\tcalculating reward for item {i} in batch')
-            with open(f"./train_outputs/item_{i}_reprompt_{idx}.txt", "w") as file:
+
+            with open(f"./train_outputs/iteration_{iteration}_item_{i}_reprompt_{idx}.txt", "w") as file:
                 file.write(output_txt)
             r, msg = reward(pytorch_str, output_txt)
+            run.log({"iteration": iteration, "reward": r, "reprompt": idx, "batch_item": i})
             print(f'\t\treward: {r}')
-            with open(f"./train_outputs/item_{i}_reprompt_{idx}_errmsg.txt", "w") as file:
+
+            with open(f"./train_outputs/iteration_{iteration}_item_{i}_reprompt_{idx}_errmsg.txt", "w") as file:
                 file.write(msg)
             batch_rewards[i] += r
             reprompt = prompt_generate_reprompt(msg)
@@ -223,6 +243,7 @@ for iteration in range(num_iterations):
             gc.collect()
             torch.cuda.empty_cache()
             print(f'\t\tloss = {loss_val:.4f}')
+            run.log({"iteration": iteration, "loss": loss_val, "ppo_epoch": _, "batch_item": i})
 
     gc.collect()
     torch.cuda.empty_cache()
