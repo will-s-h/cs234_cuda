@@ -7,3 +7,4 @@ bitsandbytes
 accelerate
 peft
 wandb
+flash-attn

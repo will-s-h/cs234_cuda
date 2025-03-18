@@ -65,7 +65,10 @@ def reward(pytorch_functional, response, CACHE_DIR="./cache_dir"):
     exec(pytorch_functional, globals())
     inputs = get_inputs()
     for i in range(len(inputs)):
-        inputs[i] = inputs[i].cuda()
+        try: # put onto cuda if possible. if not possible, then probably just a float/scalar value.
+            inputs[i] = inputs[i].cuda()
+        except:
+            pass
 
     try:
         throwaway_buffer = io.StringIO()
