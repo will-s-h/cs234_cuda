@@ -1,0 +1,41 @@
+
+
+```python
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+
+    if (row < N && col < N) {
+        for (int k = 0; k < N; ++k) {
+            sum += A[row * N + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    auto C = torch::zeros({N, N}, A.options());
+
+    int threadsPerBlock = 16;
+    int blocksPerGridX = (N + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridY = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 threads(threadsPerBlock, threadsPerBlock);
+    dim3 blocks(blocksPerGridX, blocksPerGridY);
+
+    matmul_kernel<<<blocks, threads>>>(A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), N);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

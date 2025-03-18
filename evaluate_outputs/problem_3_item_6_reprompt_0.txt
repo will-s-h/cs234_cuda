@@ -1,0 +1,43 @@
+
+
+To optimize the matrix-vector multiplication using a custom CUDA kernel, we fuse the matmul and relu operations into a single kernel for efficient computation on the GPU. This reduces kernel launch overhead and improves data reuse.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_fused_kernel(const float* A, const float* B, float* C, int M, int K) {
+    int row = blockIdx.y;
+    int col = blockIdx.x;
+    int iblock = row * K + col;
+    
+    float Crc = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        __synchrounize__;
+        int Aoffset = iblock * K + k;
+        int Blocoffset = k * M + col;
+        Crc += A[Aoffset] * B[Blocoffset];
+    }
+    C[col] = std::max(0.0f, Crc);
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    
+    auto C = torch::zeros(M, 1, K * 1, k未知的类型)；
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    const int block_size = 256;
+    const int num_blocks = (K + block_size - 1) / block_size;
+    matmul_fused_kernel<<<num_blocks, block_size>>>(A.data(), B.data(), C.data(), M, K);
+    return C;
+}
+"""
+```

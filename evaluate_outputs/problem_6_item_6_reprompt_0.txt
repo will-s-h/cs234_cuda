@@ -1,0 +1,33 @@
+
+
+To optimize the matrix multiplication operation, we can fuse the matmul and relu operations into a single CUDA kernel. This reduces kernel invocation overhead and improves performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* a, const float* b, float* out, int M, int N, int K) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        sum += a[i*K + k] * b[k*N + j];
+    }
+    out[i*N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = ( (M + threadsPerBlock - 1) / threadsPerBlock ) * ( (N + threadsPerBlock - 1) / threadsPerBlock );
+    
+    matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(a.data_ptr<float>(), b.data_ptr<float>(), 
+                                                       out.data_ptr<float>(), M, N, K);
+    
+    return out;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor a, torch::Tensor b);
+"""
+```

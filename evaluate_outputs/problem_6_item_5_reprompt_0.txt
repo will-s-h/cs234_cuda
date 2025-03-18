@@ -1,0 +1,65 @@
+
+
+To optimize the matrix multiplication operator in CUDA, we can implement a custom kernels that efficiently performs the multiplication using shared memory and coalesced memory accesses. This reduces the memory latency and improves performance.
+
+We'll structure the CUDA source similarly to the addition and ReLU examples but tailored for matrix multiplication.
+
+Here's the optimized CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared记shared器.h>  // For shared memory usage
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    // Each block will handle a submatrix multiplication
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Load A and B into shared memory using coalesced access
+    shared_tape*A_shared = __constant float__[:, :, 0] << <M, N, K>> A;
+    shared_tape*B_shared = __constant float__[:, :, 0] << <M, N, K>> B;
+
+    // Compute the number of blocks
+    int num_blocks = (M + K - 1) / K;
+
+    // Each block computes a single row of the result matrix C
+    __syncthreads();
+    for (int block = 0; block < num_blocks; ++block) {
+        if (block * K + tx < K) {
+            const float* a = A_shared[block * K + tx];
+            const float* b = B_shared[block * K + tx];
+            
+            float sum = 0.0f;
+            for (int k = 0; k < K; ++k) {
+                sum += a[k * N + ty] * b[k * N + ty + tx];
+            }
+            
+            C[block * N + ty + tx] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    // Allocate space on the device for the result
+    std::vector<int> sizes = {M, N};
+    std::vector<int> strides = {1, N};
+    auto C = torch::zeros(M, N, K, sizeof(float), device: A.device());
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmulKernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

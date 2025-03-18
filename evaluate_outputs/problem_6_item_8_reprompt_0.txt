@@ -1,0 +1,56 @@
+
+
+To optimize the given matrix multiplication model with a CUDA kernel, we fuse the matrix multiplication operation into a single CUDA kernel to maximize efficiency. This approach ensures that memory bandwidth is utilized effectively and reduces kernel launch overhead.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <curand.h>
+
+__global__ void matmul_kernel(const float* __global__ A, const float* __global__ B, float* __global__ C, int M, int N, int K) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int bz = blockIdx.z;
+    int by = blockIdx.y;
+    int tx2 = (blockSize + tx) * (tx2Step + ty) + ty;
+    C[bz*K + by*N + tx2] = 0.0f;
+    const int tid = tx2;
+    for (int k = 0; k < K; k++) {
+        __syncthreads();
+        C[bz*K + by*N + tx2] += A[bz*K + ty + k] * B[by*N + k];
+        tid++;
+        if (tid > tx2) {
+            __syncthreads();
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+
+    auto d_A =_cuda:: memory::allocate(A.data_ptr(), A.numel());
+    auto d_B = cuda:: memory::allocate(B.data_ptr(), B.numel());
+    auto d_C = cuda:: memory::allocate(C.data_ptr(), M * N);
+
+    matmul_kernel<<< (M + 255)/256, (N + 255)/256, 256 >> (d_A, d_B, d_C, M, N, K);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+
+    auto d_A = cuda::memory::allocate(A.data_ptr(), A.numel());
+    auto d_B = cuda::memory::allocate(B.data_ptr(), B.numel());
+    auto d_C = cuda::memory::allocate(C.data_ptr(), M * N);
+
+    matmul_kernel<<< (M + 255)/256, (N + 255)/256, 256 >> (d_A, d_B, d_C, M, N, K);
+    return C;
+}
+"""
+```

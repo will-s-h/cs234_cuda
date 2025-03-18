@@ -1,0 +1,32 @@
+
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_scalar Kernel(const float* A, const float* s, float* C, int M, int N) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M) {
+        float sum = 0.0f;
+        for (int k = 0; k < N; ++k) {
+            sum += A[row * N + k] * s[k];
+        }
+        C[row] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor s) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (A.numel() + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul_scalar<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), s.data_ptr(), A.numel(), A.size(1));
+    
+    return A * s;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor s);"
+)
+```

@@ -1,0 +1,75 @@
+Please also note that the inputs to the function may be non-contiguous or may need to be transposed, so your implementation should handle that.
+</think>
+
+To optimize the batched matrix multiplication using CUDA, we'll implement a custom kernel to perform the matrix multiplication efficiently on the GPU. The kernel will utilize CUDA's memory hierarchy to optimize performance by ensuring that frequently accessed data is kept in shared memory.
+
+The custom CUDA source code below implements a kernel for batched matrix multiplication that efficiently handles multiple matrices in parallel, allowing for significant speedup compared to the CPU-based implementation:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void batched_matmul_kernel(const float* A, const float* B, float* C, int batch_size, int m, int k, int n) {
+    __shared__ float tA[16 << 2];
+    __shared__ float tB[16 << 2];
+    int tx = threadIdx.x;
+    int bx = blockIdx.x;
+    
+    int tx2 = tx % 16;
+    tx = tx / 16;
+    
+    for (int b = 0; b < batch_size; ++b) {
+        int offset = b * m * k;
+        const int tile = (int)(k / 16);
+        int a_start = (tile << 2) + tx << 1;
+        int b_start = (offset + tx) << 1;
+        tA[tx + (a_start)] = A[a_start];
+        tB[tx + (b_start)] = B[b_start];
+    }
+    
+    __syncthreads();
+    
+    if (tx < 16) {
+        int tx2 = tx;
+        float sum = 0.0f;
+        for (int kg = 0; kg < k; kg += 16) {
+            for (int ty = 0; ty < m; ty += 16) {
+                for (int tx2 = 0; tx2 < 16; ++tx2) {
+                    sum += tA[tx + (ty << 1) + tx2] * tB[tx + (ty << 1) + tx2];
+                }
+            }
+        }
+        if (tx < 16) {
+            C[tx] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num_rows = m;
+    int num_cols = n;
+    int size = batch_size * num_rows * num_cols;
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    float* dA = A.data_ptr();
+    float* dB = B.data_ptr();
+    float* dC = C.data_ptr();
+    int shared pitches = 2;
+    int warpsPerBlock = 4;
+    float pitch = blocksPerGrid * warpsPerBlock;
+    int tx = threadIdx.x;
+
+    auto C = torch::empty(B.data_ptr()->size(), B.device(), C.data_ptr()->type());
+
+    C = batched_matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(dA, dB, dC, batch_size, m, k, n);
+
+    return C;
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

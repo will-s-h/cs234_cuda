@@ -1,0 +1,71 @@
+
+
+To optimize the matrix multiplication operation using CUDA, we'll implement a custom CUDA kernel that efficiently handles the matrix multiplication and addition operations in parallel. This will reduce the computation time by offloading the intensive operations to the GPU and utilizing shared memory to minimize global memory access.
+
+The implementation will combine matrix multiplication and addition into a single kernel to improve performance. The kernel will use a grid of blocks, with each block handling a section of the matrices. Each thread in a block will compute a part of the resulting matrix by multiplying and adding corresponding elements from the input matrices.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <helper.h>
+
+__global__ void matmul_addKernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        if (tx + k < M || ty + k < N) {
+            const float* A_row = A + (bx) * K + k;
+            const float* B_col = B + (by) * N + k;
+            sum += A[row][k] * B[col][k];
+        }
+    }
+
+    if (bx < M && by < N) {
+        int pos = bx * N + by;
+        C[pos] = sum + (bx < M && by < N) ? A[bx][by] : 0.0f;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::empty(M, N).to(A);
+    
+    const int BLOCK_K = 128;
+    const int BLOCK_SIZE = 256;
+    int numBlocksM = M / BLOCK_SIZE + (M % BLOCK_SIZE != 0 ? 1 : 0);
+    int numBlocksN = N / BLOCK_SIZE + (N % BLOCK_SIZE != 0 ? 1 : 0);
+    int numBlocks = numBlocksM * numBlocksN;
+    
+    matmul_addKernel<<<numBlocks, BLOCK_SIZE>>>(A.data, B.data, C.data, M, K, N);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::empty(M, N).to(A);
+    
+    const int BLOCK_K = 128;
+    const int BLOCK_SIZE = 256;
+    int numBlocksM = M / BLOCK_SIZE + (M % BLOCK_SIZE != 0 ? 1 : 0);
+    int numBlocksN = N / BLOCK_SIZE + (N % BLOCK_SIZE != 0 ? 1 : 0);
+    int numBlocks = numBlocksM * numBlocksN;
+    
+    matmul_addKernel<<<numBlocks, BLOCK_SIZE>>>(A.data, B.data, C.data, M, K, N);
+    
+    return C;
+}
+"""
+```

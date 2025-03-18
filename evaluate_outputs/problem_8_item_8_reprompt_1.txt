@@ -1,0 +1,123 @@
+This time, use shared memory in the kernel to optimize memory bandwidth usage. Also, ensure that the kernel is properly blocked and thread-synthesized for maximum occupancy and performance.
+
+The example architecture for element-wise addition is:
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void elementwise_add_kernel(const float* a, const float* b, float* out, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] + b[idx];
+    }
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    auto size = a.numel();
+    auto out = torch::zeros_like(a);
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    elementwise_add_kernel<<<num_blocks, block_size>>>(a.data_ptr<float>(), b.data_ptr<float>(), out.data_ptr<float>(), size);
+
+    return out;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor a, torch::Tensor b);"
+)
+```
+
+The example for ReLU is:
+
+```
+cuda_source = """
+#include <torch/extension.h>
+
+__global__ void relu_kernel(const float* a, float* out, int size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < size) {
+        out[i] = (a[i] > 0) ? a[i] : 0;
+    }
+}
+
+torch::Tensor forward(torch::Tensor a) {
+    auto size = a.numel();
+    auto output = torch::zeros_like(a);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    relu_kernel<<<blocksPerGrid, threadsPerBlock>>>(a.data_ptr<float>(), output.data_ptr<float>(), size);
+
+    return output;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor a);"
+)
+```
+
+Please provide a similar custom CUDA implementation for the given model, named 'Model', that optimizes for the following requirements:
+
+1. Uses shared memory in the kernel to optimize memory bandwidth usage
+2. Properly synthesizes threads and blocks for maximum occupancy and performance
+3. Maintains the same API as the PyTorch implementation
+4. Keeps the same shapes for input and output tensors
+5. Uses the same data types as PyTorch ( float )
+6. Is properly named 'forward' both in the CUDA source and the cpp_source
+7. Uses the most efficient CUDA kernels and block synthesis as possible
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared memory.h>  // For shared memory usage
+
+__global__ void matmul_kernel(const float* __global__ a, const float* __global__ b, float* __global__ out, 
+                             int M, int N, int K) {
+    __shared__ float a_row[256];
+    __shared__ float b_col[256];
+    
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    // Load a_row and b_col into shared memory
+    if (threadIdx.x < 256) {
+        a_row[threadIdx.x] = a[i * K + threadIdx.x];
+    }
+    if (threadIdx.y < 256) {
+        b_col[threadIdx.y] = b[threadIdx.y * K + j];
+    }
+    
+    // Compute the dot product
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        sum += a_row[sockitten_tpid() * 256 + k] * b_col[sockitten_tpid() * 256 + k];
+    }
+    
+    // Write to global memory
+    if (sockitten_tpid() == 0) {
+        out[i * N + j] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    int M = a.size(0);
+    int N = b.size(1);
+    int K = a.size(1);
+
+    if (M < 256 || N < 256 || K < 256) {
+        auto output_size = M * N;
+        auto output = torch::zeros(M, N);
+        
+        const int block_size = 256;
+        const int num_blocks = (output_size + block_size - 1) / block_size;
+        
+        mat

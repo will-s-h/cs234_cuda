@@ -1,0 +1,104 @@
+Another attempt:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void batch_matmul_kernel(float* A, float* B, float* C, int batch_size, int m, int k, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    float sum = 0.0f;
+    for (int l = 0; l < k; ++l) {
+        sum += A[batch_size * m * k + batch_size * i * k + l] *
+              B[batch_size * k * n + batch_size * l * n + j];
+    }
+    C[batch_size * m * n + i * n + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int m = A.size(1);
+    int k = A.size(2);
+    int n = B.size(2);
+    int batch_size = A.size(0);
+
+    auto size = batch_matmul_size_t_t(A, B);
+    auto C = torch::empty(batch_size, m, n, {16}, k == 0 ? k : n == 0 ? k : 128);
+
+    int block_size = 256;
+    int grid_size_i = (m + block_size - 1) / block_size;
+    int grid_size_j = (n + block_size - 1) / block_size;
+
+    batch_matmul_kernel<<<grid_size_i, grid_size_j, block_size, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), batch_size, m, k, n);
+
+    return C;
+}
+
+size_t batch_matmul_size_t_t(const torch::Tensor& A, const torch::Tensor& B) {
+    size_t size = 0;
+    if (A.numel() == 0 || B.numel() == 0) {
+        return 0;
+    }
+    size = A.numel();
+    if (B.numel() > size) {
+        size = B.numel();
+    }
+    return size;
+}
+"""
+
+ cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+</think>
+
+To optimize the batch matrix multiplication with CUDA operators, we fused the matrix multiplication with the batch dimension into a single CUDA kernel for efficiency, reducing kernel call overhead.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void batch_matmul_kernel(float* A, float* B, float* C, int batch_size, int m, int k, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    float sum = 0.0f;
+    for (int l = 0; l < k; ++l) {
+        sum += A[batch_size * m * k + batch_size * i * k + l] *
+              B[batch_size * k * n + batch_size * l * n + j];
+    }
+    C[batch_size * m * n + i * n + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int m = A.size(1);
+    int k = A.size(2);
+    int n = B.size(2);
+    int batch_size = A.size(0);
+
+    auto size = batch_matmul_size_t_t(A, B);
+    auto C = torch::empty(batch_size, m, n, {16}, k == 0 ? k : n == 0 ? k : 128);
+
+    int block_size = 256;
+    int grid_size_i = (m + block_size - 1) / block_size;
+    int grid_size_j = (n + block_size - 1) / block_size;
+
+    batch_matmul_kernel<<<grid_size_i, grid_size_j, block_size, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), batch_size, m, k, n);
+
+    return C;
+}
+
+size_t batch_matmul_size_t_t(const torch::Tensor& A, const torch::Tensor& B) {
+    size_t size = 0;
+    if (A.numel() == 0 || B.numel() == 0) {
+        return 0;
+    }
+    size = A.numel();
+    if (B.numel() > size) {
+        size = B.numel();
+    }
+    return size;
+}
+"""
+```python
+cuda_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B)\n"
+    "    -> torch

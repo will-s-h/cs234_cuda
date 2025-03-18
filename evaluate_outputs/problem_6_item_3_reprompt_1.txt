@@ -1,0 +1,44 @@
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        sum += A[i*K + k] * B[k*N + j];
+    }
+    C[i*N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num threadsPerBlock = 256;
+    int num blocksPerGridM = (A.size(0) + num threadsPerBlock - 1) / num threadsPerBlock;
+    int num blocksPerGridN = (B.size(1) + num threadsPerBlock - 1) / num threadsPerBlock;
+
+    auto C = torch::zeros(A.size(0), B.size(1), .device(), .strides(), .requires_grad_(A.requires_grad || B.requires_grad));
+
+    matmul_kernel<<<num_blocks_per_grid, num threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), A.size(0), B.size(1), A.size(2));
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int threadsPerBlock = 256;
+    int blocksPerGridM = (A.size(0) + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridN = (B.size(1) + threadsPerBlock - 1) / threadsPerBlock;
+
+    auto C = torch::zeros(A.size(0), B.size(1), .device(), .strides(), .requires_grad_(A.requires_grad || B.requires_grad));
+
+    matmul_kernel<<<blocksPerGridM, blocksPerGridN, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), A.size(0), B.size(1), A.size(2));
+
+    return C;
+}
+"""
+```

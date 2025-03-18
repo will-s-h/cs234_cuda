@@ -1,0 +1,43 @@
+</think>
+
+```
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = (threadIdx.x + 4 * threadIdx.y) * (blockDim.x + 4 * blockDim.y) + (threadIdx.y + 4 * threadIdx.x);
+    if (i < M * N) {
+        int k = (i + (M * N - 1)) / (N * (blockDim.x + 4 * blockDim.y)) % (blockDim.x + 4 * blockDim.y);
+        int n = (i + (M * N - 1)) / ((blockDim.x + 4 * blockDim.y) * (N)) % (blockDim.y + 4 * blockDim.x);
+        int m = i % (blockDim.x + 4 * blockDim.y);
+        
+        float sum = 0.0f;
+        for (int tid = 0; tid < K; tid++) {
+            sum += A[(m + (k * blockDim.x + tid)) * M + tid] * B[(n + (k * blockDim.x + tid)) * N + tid];
+        }
+        C[i] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+
+    auto C = torch::zeros(M, N);
+
+    const int nb = ((M + 127) / 128);
+    const int nb_blocks = ((M + 127) / 128) * ((N + 127) / 128);
+    const int block = 128;
+
+    matmul_kernel<<<nb_blocks, 128>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

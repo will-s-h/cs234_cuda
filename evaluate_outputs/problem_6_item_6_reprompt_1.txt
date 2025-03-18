@@ -1,0 +1,32 @@
+</think>
+
+To optimize the model by fusing the matmul operation into a single kernel, we create a custom CUDA kernel that performs the matrix multiplication directly. This avoids kernel calls and shared code between operators.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* a, const float* b, float* out, int M, int N, int K) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0;
+    for (int k = 0; k < K; ++k) {
+        sum += a[i*K + k] * b[k*N + j];
+    }
+    out[i*N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    auto size = a.numel();
+    auto out = torch::zeros_like(a);
+
+    const int block_size = 256;
+    const int num_blocks = ( (M + block_size - 1) / block_size ) * ( (N + block_size - 1) / block_size );
+
+    matmul_kernel<<<num_blocks, block_size>>>(a.data_ptr(float()), b.data_ptr(float()), 
+                                             out.data_ptr(float()), M, N, K);
+
+    return out;
+}
+"""
+```

@@ -1,0 +1,50 @@
+Also, this is a follow up to the initial attempt, so make sure to modify the earlier code accordingly.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void batched_matmulKernel(
+    const float* A, const float* B, float* C,
+    int batch_size, int m, int k, int n) {
+    
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ty = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    float Cij = 0.0f;
+    for (int j = ty; j < n; j += blockDim.y) {
+        float Bkj = B[(ty * k + j) * m + (blockDim.x * k + m * tx + j)];
+        for (int l = 0; l < k; ++l) {
+            Cij += A[(tx * k + l) * batch_size + l] * Bkj;
+        }
+        C[(ty * m + tx) * batch_size + j * m + tx] = Cij;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int size = A.numel();
+    auto batch = batch_size;
+    auto m = A.size()[1];
+    auto k = A.size()[2];
+    auto n = B.size()[2];
+    
+    auto *A_ptr = A.data_ptr();
+    auto *B_ptr = B.data_ptr();
+    auto *C_ptr = std::get<0>(C.data_ptr());
+    
+    auto threadsPerBlock = 256;
+    auto blocksPerGrid = (k + threadsPerBlock - 1) / threadsPerBlock;
+    
+    batched_matmulKernel<<<blocksPerGrid, threadsPerBlock>>>(
+        A_ptr, B_ptr, C_ptr, batch, m, k, n);
+    
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

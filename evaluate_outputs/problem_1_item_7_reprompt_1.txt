@@ -1,0 +1,84 @@
+The custom kernels should be in a single source file, so that the cpp compilation process can process them without any issues.
+
+Okay, let me think about this. The issue arises because the custom CUDA code needs to be properly integrated into the PyTorch extension. The current implementation might not be generating the correct build files for the compiler to recognize the custom kernels. To fix this, the custom CUDA source should be placed in the cpp_header section of the build configuration so that the compiler can process it. Additionally, including torch/extension.h in the CUDA kernel ensures that all necessary headers are available, which can prevent compilation errors.
+
+Let me adjust the CUDA source to include all necessary headers and structure the code properly for the extension. The build configuration should instruct the compiler to include torch/extension.h inside the CUDA file. This way, when the extension is built, all required headers are accessible.
+
+Here's the revised CUDA source that includes these changes:
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = blockIdx_row * blockDim_row + threadIdx_row;
+    int j = blockIdx_col * blockDim_col + threadIdx_col;
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        sum += A[blockRow * K + k] * B[blockCol + k * blockDim_col + threadIdx_col];
+    }
+    C[blockRow * N + blockCol] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    if (K == 0 || N == 0) {
+        return torch::zeros(M, N);
+    }
+
+    auto pitchA = sizeof(float) * K;
+    auto pitchB = sizeof(float) * N;
+    auto pitchC = sizeof(float) * N;
+
+    auto num_rows = M;
+    auto num_cols = N;
+    auto blocks_per_grid_row = 256;
+    auto blocks_per_grid_col = (num_cols + 255) >> 8;
+
+    matmul_kernel<<<num_rows, blocks_per_grid_row, blocks_per_grid_col>>>(A.data(), B.data(), B.data(), M, K, N);
+}
+
+torch::Tensor elementwise_add_kernel(const float* a, const float* b, float* out, int size) {
+    __global__ void elementwise_add_kernel(const float* a, const float* b, float* out, int size) {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < size) {
+            out[idx] = a[idx] + b[idx];
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    auto size = a.numel();
+    auto out = torch::zeros_like(a);
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    elementwise_add_kernel<<<num_blocks, block_size>>>(a.data_ptr<float>(), b.data_ptr<float>(), out.data_ptr<float>(), size);
+}
+"""
+
+Including torch/extension.h inside the CUDA file should help the compiler understand the necessary interfaces for extension modules. This change ensures that when the extension is built, all required headers and functions are properly included, which can resolve the previous compilation error.
+
+Additionally, modifying the cpp_source to exactly match the function signature expected by the PyTorch extension API is crucial for compatibility. By specifying the precise method signature, the generated CUDA code will integrate seamlessly with the PyTorch framework.
+
+By making these adjustments, the custom CUDA kernels will be correctly included in the build process, and the PyTorch extension should compile without issues. This approach maintains the same functionality but structures the code to fit within the expected extension framework.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = (blockRow * blockDim_row + threadIdx_row) * (blockCol * blockDim_col + threadIdx_col);
+    if (i < M * N) {
+        int k = (blockRow * blockDim_row + threadIdx_row) * (blockCol * blockDim_col + threadIdx_col);
+        int j = (blockRow * blockDim_row + threadIdx_row);
+        float sum = 0.0f;
+        for (int l = 0; l < K; ++l) {
+            sum += A[blockRow *

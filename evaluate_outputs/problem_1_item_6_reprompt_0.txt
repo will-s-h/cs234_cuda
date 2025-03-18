@@ -1,0 +1,59 @@
+
+
+To optimize the given matrix multiplication model using CUDA, we'll create a custom CUDA kernel to perform the matrix multiplication efficiently. This replaces the standard `torch.matmul` operation, ensuring correctness and potential speedups through optimized GPU execution.
+
+We'll write a CUDA source file that implements the matrix multiplication kernel, and include the corresponding C++ source for the forward method in a torch extension.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* dA, const float* dB, float* dC, int M, int K, int N) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tx_row = (M + BLOCK_SIZE) / BLOCK_SIZE;
+    int by = (N + BLOCK_SIZE) / BLOCK_SIZE;
+    int bx = threadingIdxAlongFirst_dim < tx_row * BLOCK_SIZE ? 
+             (tx_row * BLOCK_SIZE + threadingIdxAlongFirst_dim) : 0;
+    int cy = threadingIdxAlongSecond_dim < by * BLOCK_SIZE ? 
+             (by * BLOCK_SIZE + threadingIdxAlongSecond_dim) : 0;
+    
+    float Celement = 0.0f;
+    for (int i = 0; i < K; i++) {
+        Celement += dA[bx * K + i] * dB[ty * K + i];
+    }
+    dC[tx * N + ty] = Celement;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    // Allocate output tensor
+    auto C = torch::zeros(M, N);
+    
+    // Grid setup
+    int BLOCK_SIZE = 256;
+    int num_blocks_per_row = (M + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int num_blocks_per_col = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    
+    // Launch the kernel
+    matmul_kernel<<<num_blocks_per_row, num_blocks_per_col>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K, N);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    auto C = torch::zeros(M, N);
+    matmul_kernel(M, K, N, A.data(), B.data(), C.data());
+    return C;
+}
+"""
+```

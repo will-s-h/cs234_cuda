@@ -1,0 +1,58 @@
+
+
+To optimize the matrix multiplication operator using CUDA, we'll implement a custom CUDA kernel that efficiently handles the multiply-accumulate operations. This kernel will be launched with blocks that maximize occupancy and coalesced memory access. Additionally, we'll fuse the memory access pattern to reduce global memory transactions and optimize the kernel for shared memory usage. This approach will significantly improve performance compared to the default implementation.
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared_buffer.h> // For shared memory usage
+
+__global__ void matmul kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    shared buffer : Aligned(32) float(16,16); // 16x16 shared buffer
+    
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    for (int k = 0; k < K; k += 16) {
+        shared buffer[blockRow * 16 + k] = A[blockRow * K + k]; // Load row into shared buffer
+    }
+    
+    shared buffer[blockCol * 16 + j] = B[blockCol * K + j]; // Load column into shared buffer
+    __syncthreads(); // Wait for all threads in shared buffer to load
+    
+    for (int n = 0; n < 16; ++n) {
+        if (n < K / 16) {
+            float temp = 0.0f;
+            for (int l = 0; l < 16; ++l) {
+                temp += buffer[shared buffer.size()];
+                float other = buffer[shared buffer.size() + l];
+                temp *= other;
+                float other2 = buffer[shared buffer.size() + l + n];
+                temp *= other2;
+                buffer[shared buffer.size() + l + n] = temp;
+            }
+            C[i * N + j] = buffer[shared buffer.size() + n];
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = A.size(1);
+    auto size = M * N;
+    auto C = torch::zeros(M, N);
+    
+    int block_size = 256;  // 16x16 block size
+    int num_blocks = (M + block_size - 1) / block_size;
+    int num_threadsPerBlock = 256;
+    
+    matmul kernel<<<num_blocks, num_threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+    
+    return C;
+}
+```
+
+```cpp_source
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+```

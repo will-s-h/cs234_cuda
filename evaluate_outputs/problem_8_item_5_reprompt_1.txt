@@ -1,0 +1,50 @@
+Now I have three tries and I'm running out of time, so I need to figure this out quickly.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cuBlas.h>
+
+__global__ void matmul fused activation(const float* A, const float* B, float* out, int M, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        float sum = 0.0f;
+        shared memory<SMaryn> SH;
+        SH.d = (A + i * N) * B + i;
+        __syncthreads();
+        for (int j = 0; j < N; j++) {
+            sum += SH.d[j];
+        }
+        __syncthreads();
+        out[i] = sum > 0 ? sum : 0;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto size = A.numel();
+    auto out = torch::zeros_like(A);
+    
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul fused activation<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), A.size(0), B.size(1));
+
+    return out;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = ((M + threadsPerBlock - 1) / threadsPerBlock) * ((N + threadsPerBlock - 1) / threadsPerBlock);
+    auto C = torch::zeros(M, N, K);
+    matmul fused activation<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N);
+    return C;
+}
+"""
+```

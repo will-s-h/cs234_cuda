@@ -1,0 +1,56 @@
+
+
+To optimize the matrix multiplication operation, we'll fuse the matmul and relu operations into a single kernel, and use dimension-specific constants for better performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_fused_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int row = blockIdx.y;
+    int col = blockIdx.x;
+    int threadId = threadIdx.x;
+
+    float C_val = 0.0f;
+    for (int k = 0; k < K; k++) {
+        __shared__ float A_row[16] = {0};
+        __shared__ float B_col[16] = {0};
+
+        A_row[threadId] = A[row * K + k];
+        B_col[threadId] = B[col * N + k];
+        
+        for (int t = 0; t < 16; t++) {
+            if (blockThreadIds[t] & 1) {
+                C[row * N + col] += A_row[t] * B_col[t];
+            }
+            __syncthreads();
+        }
+        threadId++;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = B.size(0);
+    
+    auto C = torch::zeros(M, N, false, A.device(), A.dtype());
+    
+    const int BLOCK_SIZE = 16;
+    const int numBlocksPerGrid = (K + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    matmul_fused_kernel<<<M, numBlocksPerGrid>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+    return matmul fused(M, N, K, A, B);
+}
+"""
+```

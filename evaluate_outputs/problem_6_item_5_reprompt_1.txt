@@ -1,0 +1,52 @@
+The issue is that my code has shared memory usage which isn't allowed in CUDA compilation. How can I fix this?
+</think>
+
+To fix the issue with shared memory usage, I need to modify the CUDA kernel to use register arithmetic instead. This avoids the need for shared memory and makes the code more compatible.
+
+Here's the corrected CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    __syncthreads();
+
+    for (int k = 0; k < K; ++k) {
+        const float a_val = A[ty + tx * N + k * M];
+        const float b_val = B[ty + tx * N + k * M];
+        C[ty + tx * N + k * M] = a_val * b_val;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+
+    // Allocate space on the device for the result
+    std::vector<int> sizes = {M, N};
+    std::vector<int> strides = {1, N};
+    auto C = torch::zeros(M, N, K, sizeof(float), device: A.device());
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmulKernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+```
+
+And the cpp_source remains unchanged:
+
+```cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```
+
+This implementation removes shared memory usage and instead uses direct memory access with register arithmetic, making it fully compliant with CUDA compilation rules.

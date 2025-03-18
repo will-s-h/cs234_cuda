@@ -1,0 +1,121 @@
+The example CUDA outputs showed that the code is meant to be incorporated into a larger PyTorch extension module, and that the forward method is correctly defined within the cpp_source string. The forward method is defined with an explicit method signature, which should match the interface expected by the PyTorch system.
+
+In the previous attempt, there were some formatting issues with the kernel function signature, such as missing commas or incorrect line breaks. Additionally, the cpp_source string should only contain the forward method definition without any surrounding code.
+
+Here is the properly formatted corrected CUDA code:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* __global__ A,
+                              const float* __global__ B,
+                              float* __global__ C,
+                              int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    __shared__ float As[BLOCK_SIZE][.*];
+    __shared__ float Bs[.*][BLOCK_SIZE];
+    
+    if (row < M && col < N) {
+        for (int k = 0; k < K; k += BLOCK_SIZE) {
+            const float* a = &A[row * K + k];
+            const float* b = &B[col + k * N];
+            
+            as[tsrow] = a;
+            bs[tscol] = b;
+            
+            __syncthreads();
+            
+            float Ck = 0.0f;
+            for (int d = 0; d < BLOCK_SIZE; ++d) {
+                Ck += as[d] * bs[d];
+            }
+            
+            C[col + row * N] = Ck;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+
+    if (K != B.size(0)) {
+        throw invalid_argument("matmul: K must equal dim1 of B");
+    }
+
+    auto C = torch::empty(M, N, A.dtype(), ..device(A));
+    auto size = M * N;
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+However, when executing the code, there was still a problem, so I had to reformat the code again to fix the indentation and ensure that all lines are properly formatted.
+
+Here is the final corrected CUDA source code:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* __global__ A,
+                              const float* __global__ B,
+                              float* __global__ C,
+                              int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ float As[BLOCK_SIZE][.*];
+    __shared__ float Bs[.*][BLOCK_SIZE];
+
+    if (row < M && col < N) {
+        for (int k = 0; k < K; k += BLOCK_SIZE) {
+            const float* a = &A[row * K + k];
+            const float* b = &B[col + k * N];
+            
+            as[tsrow] = a;
+            bs[tscol] = b;
+            
+            __syncthreads();
+            
+            float Ck = 0.0f;
+            for (int d = 0; d < BLOCK_SIZE; ++d) {
+                Ck += as[d] * bs[d];
+            }
+            
+            C[col + row * N] = Ck;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = A.size(1);
+
+    if (K != B.size(0)) {
+        throw invalid_argument("matmul: K must equal dim1 of B");
+    }
+
+    auto C = torch::empty(M, N, A.dtype(), ..device(A));
+    auto size = M * N;
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+</think>
+
+```
+cuda_source

@@ -1,0 +1,43 @@
+I'll provide the correct format for the CUDA source, ensuring the kernel is properly structured and the C++ interface matches the architecture.
+</think>
+
+Here is the CUDA optimized implementation for matrix multiplication:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int n) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+    for (int k = 0; k < n; ++k) {
+        sum += A[row * n + k] * B[k * n + col];
+    }
+    C[row * n + col] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int size = A.numel();
+    auto C = torch::zeros(A.size());
+    
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+    
+    matmulKernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), A.numel());
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto C = torch::zeros(A.size());
+    int n = A.size(1);
+    const int block_size = 256;
+    const int num_blocks = (n + block_size - 1) / block_size;
+    matmulKernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), n);
+    return C;
+}
+"""
+```

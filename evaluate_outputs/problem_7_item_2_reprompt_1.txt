@@ -1,0 +1,71 @@
+Alright, I'll adjust the code to follow the correct format and structure as shown in the previous examples.
+</think>
+
+Here is the optimized CUDA implementation for the matrix multiplication operation:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* a, const float* b, float* c, int m, int n, int k) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < m) {
+        int j = blockIdx.y * blockDim.y + threadIdx.y;
+        if (j < n) {
+            int col = j;
+            int row = i;
+            float sum = 0.0f;
+            for (int l = 0; l < k; ++l) {
+                sum += a[row * k + l] * b[col * k + l];
+            }
+            c[row * n + j] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto m = A.size(0);
+    auto n = B.size(1);
+    auto k = B.size(0);
+
+    auto size = m * n;
+    auto dA = A.data_ptr<float>();
+    auto dB = B.data_ptr<float>();
+    auto dc = c.data_ptr<float>();
+
+    if (m == 0 || n == 0 || k == 0) {
+        return torch::zeros(0, 0);
+    }
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(dA, dB, dc, m, n, k);
+
+    return c;
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto m = A.size(0);
+    auto n = B.size(1);
+    auto k = B.size(0);
+
+    if (m == 0 || n == 0 || k == 0) {
+        return torch::zeros(0, 0);
+    }
+
+    auto c = torch::empty(0, 0);
+    
+    if (m != c.numel() / n) {
+        c.resize(0, 0, m, n);
+    }
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), c.data_ptr(), m, n, k);
+
+    return c;
+}
+"""
+```

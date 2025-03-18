@@ -1,0 +1,42 @@
+For the purposes of this exercise, let's focus on a basic example of performing a batched matrix multiplication with a fused kernel.
+</think>
+
+To optimize the matrix multiplication, we'll implement a custom CUDA kernel for fused matrix multiplication. This will allow us to perform the multiplication directly without going through the CPU, improving performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_fused(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < M) {
+        int j = blockIdx.y * blockDim.y + threadIdx.y;
+        if (j < N) {
+            float sum = 0.0f;
+            for (int k = 0; k < K; ++k) {
+                sum += A[i*K + k] * B[k*N + j];
+            }
+            C[i*N + j] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+    auto out = torch::zeros(M, N, K);
+
+    int block_size = 256;
+    int num_blocks = (M + block_size - 1) / block_size;
+
+    matmul_fused<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), M, N, K);
+
+    return out;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

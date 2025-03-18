@@ -1,0 +1,96 @@
+The example code correctly formatted the CUDA source code with the forward function correctly named. The latest output attempt didn't include the necessary helper functions or maintain the correct signature.
+
+Here's an attempt to write it again:
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul3d_forward_converse(const float* A, const float* B, float* out, int N, int M, int K, int L) {
+    int block_idx[3];
+    int v, i, j, k;
+
+    const __global__ float* A pitches = A pitches; // This won't compile, need to handle memory pitch access
+
+    for (block_idx[0] = 0; block_idx[0] < N; block_idx[0] += threadIdx.x) {
+        for (block_idx[1] = 0; block_idx[1] < M; block_idx[1] += threadIdx.y) {
+            for (block_idx[2] = 0; block_idx[2] < K; block_idx[2] += threadIdx.z) {
+                const float A_val = *A++;
+                const float B_val = *B++;
+                const float G_val = *out--;
+                const float Bt_val = *Bt--;
+
+                *Bt = G_val * A_val;
+                *B  = *B + Bt_val;
+                *A  = *A - A_val;
+            }
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto N = A.size(0);
+    auto M = A.size(1);
+    auto K = A.size(2);
+    auto L = B.size(1);
+
+    auto out = torch::zeros(N, M, L);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (K + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul3d_forward_converse<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), 
+                                                                N, M, K, L);
+
+    return out;
+}
+```
+
+However, I'm still having difficulty getting the code to compile and function properly. I think the main issue is correctly handling the memory pitch (alignment) and integrating this into the existing CUDA architecture.
+
+Here's my latest attempt:
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul3d_backward_converse(const float* grad_out, const float* grad_a, 
+                                         const float* grad_b, int N, int M, int K, int L) {
+    int block_idx[3];
+    int v, i, j, k;
+
+    const __global__ float* A = grad_a[i];
+    const __global__ float* B = grad_b[j];
+    const __global__ float* G = grad_out[k];
+    __global__ float* Bt = grad_b[j];
+
+    for (block_idx[0] = 0; block_idx[0] < N; block_idx[0] += threadIdx.x) {
+        for (block_idx[1] = 0; block_idx[1] < M; block_idx[1] += threadIdx.y) {
+            for (block_idx[2] = 0; block_idx[2] < K; block_idx[2] += threadIdx.z) {
+                const float A_val = *A++;
+                const float B_val = *B++;
+                const float G_val = *G--;
+                const float Bt_val = *Bt--;
+
+                *Bt = G_val * A_val;
+                *B  = *B + Bt_val;
+                *A  = *A - A_val;
+            }
+        }
+    }
+}
+
+__global__ void matmul3d_forward_converse(const float* A, const float* B, float* out, 
+                                         int N, int M, int K, int L) {
+    int block_idx[3];
+    int v, i, j, k;
+
+    const __global__ float* A pitches = A pitches; // Still need to handle pitch correctly
+
+    for (block_idx[0] = 0; block_idx[0] < N; block_idx[0] += threadIdx.x) {
+        for (block_idx[1] = 0; block_idx[1] < M; block_idx[1] += threadIdx.y) {
+            for (block_idx[2] = 0; block_idx[2] < K; block_idx[2] += threadIdx.z) {
+                const float A_val = *A++;
+                const float B_val = *B++;
+                const float G_val = *out--;
+                const float Bt_val = *Bt

@@ -1,0 +1,45 @@
+
+
+To optimize the given model, we can replace the matrix-scalar multiplication with a custom CUDA kernel that efficiently handles the operation using shared memory for better performance. This leverages CUDA's shared memory bandwidth to reduce global memory access latency, improving overall throughput.
+
+Here's the optimized CUDA code:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared_memory.h>
+
+__global__ void mat_scalar_mul(const float* restrict A, float scalar, float* restrict C, 
+                                int M, int N) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < M && j < N) {
+        shared memory [M][N] = A[i * N + j];
+        __syncthreads();
+        if (i < M && j < N) {
+            C[i * N + j] = shared memory [i * N + j] * scalar;
+        }
+        __syncthreads();
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, float s) {
+    int num_rows = A.size(0);
+    int num_cols = A.size(1);
+    auto size = num_rows * num_cols;
+    auto C = torch::zeros_like(A);
+    
+    float* restrict dA = A.data_ptr<float>();
+    float* restrict dC = C.data_ptr<float>();
+    
+    int block_size = 256;
+    int num_blocks = (size + block_size - 1) / block_size;
+    mat_scalar_mul<<<num_blocks, block_size>>>(dA, s, dC, num_rows, num_cols);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, float s);
+"""
+```

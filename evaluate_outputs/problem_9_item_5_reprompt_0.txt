@@ -1,0 +1,42 @@
+
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void tensor_matrix_mult_kernel(const float* A, const float* B, float* C, int N, int M, int K, int L) {
+    int n = ((int32_t)(blockIdx.x) << 10) | ((int32_t)(blockIdx.y) << 5) | (int32_t)(blockIdx.z);
+    int m = (blockIdx.x & 0x3FF) << 10 | (blockIdx.y & 0x3FF) << 5 | blockIdx.z & 0x3FF;
+    int k = (threadIdx.x << 10) | (threadIdx.y << 5) | threadIdx.z;
+    int idxA = n * M * K + m * K + k;
+    int idxB = n * K * L + k * L;
+    int idxC = n * M * L + m * L;
+    if (k < K) {
+        C[idxC] = (A[idxA] * B[idxB]);
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+    
+    auto size = N * M * L;
+    auto out = torch::zeros_like(A);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    tensor_matrix_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr<float>(), B.data_ptr<float>(), 
+                                                              out.data_ptr<float>(), N, M, K, L);
+
+    return out;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

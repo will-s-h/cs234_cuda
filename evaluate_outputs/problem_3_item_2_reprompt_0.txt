@@ -1,0 +1,52 @@
+
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matvec_mult_ker(const float* A, const float* B, float* C, int M, int K) {
+    int block_idx = blockIdx threads_idx.x;
+    int M = getdim(0);
+    int K = getdim(1);
+    if (block_idx >= M) return;
+    const int K_per_block = K / num threads_per_block;
+    const int B = (block_idx) * K_per_block;
+    const int A_step = (block_idx) * K_per_block * sizeof(float);
+    float* a_ptr = A + A_step;
+    float* b_ptr = B + B_step;
+    float* c_ptr = C + C_step;
+    // Now the kernel code
+    int i = 0;
+    for (; i < K; i += num threads_per_block) {
+        *c_ptr++ = 0.0f;
+        for (unsigned int n = 0; n < num threads_per_block; ++n) {
+            *c_ptr++ += *a_ptr++ * *b_ptr++;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int num_threads_per_block = 256;
+    int num_blocks = (K + num_threads_per_block - 1) / num_threads_per_block;
+    // auto M = getdim(0);
+    // auto K = getdim(1);
+    matvec_mult_ker<<<num_blocks, num_threads_per_block>>>(A.data_ptr<float>(), B.data_ptr<float>(), A.numel(), M, K);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int num_threads_per_block = 256;
+    int num_blocks = (K + num_threads_per_block - 1) / num_threads_per_block;
+    torch::Tensor C(M, 1);
+    matvec_mult_ker<<<num_blocks, num_threads_per_block>>>(A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), M, K);
+    return C;
+}
+"""
+```

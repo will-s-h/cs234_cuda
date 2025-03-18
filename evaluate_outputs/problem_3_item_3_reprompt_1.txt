@@ -1,0 +1,35 @@
+</think>
+
+```
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matvec_mult_ker(const float* dA, const float* dB, float* dC, int M, int K) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= M) return;
+    for (int k = 0; k < K; ++k) {
+        dC[row] += dA[row*K + k] * dB[k];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    if (B.size(0) != K) {
+        throw std::runtime_error("Matvec multiply requires that B has size K,1");
+    }
+    auto dA = A.data_ptr<float>();
+    auto dB = B.data_ptr<float>();
+    auto dC = torch::zeros(M, 1, sizeof(float), device: A.device()).data_ptr<float>();
+    
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+    matvec_mult_ker<<<num_blocks, block_size>>>(dA, dB, dC, M, K);
+    return torch::vec(dC);
+}
+"""
+ cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

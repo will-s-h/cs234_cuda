@@ -1,0 +1,104 @@
+The error says that the custom CUDA source wasn't correctly formatted. So let me check the code again.
+
+Upon reviewing the code, I notice that in the `matmul_kernel` function, the shared memory access is incorrect. The variables `sharedA` and `sharedB` should be properly aligned in shared memory. Additionally, the code lacks proper initialization of the output tensor, which could cause issues.
+
+Here is a corrected and more efficient version of the CUDA kernel:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
+
+__global__ void matmul_kernel(const float* d_A, const float* d_B, float* d_C, int M, int K, int N) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    shared_t sharedA[blocksPerRow[0]];
+    shared_t sharedB[blocksPerRow[0]];
+    
+    if (i < M && j < N) {
+        sharedA[i] = d_A[i * K + ii];
+        sharedB[j] = d_B[ii * N + j];
+    }
+    
+    for (int k = 0; k < K; k += threadsPerBlock) {
+        if (i < M && j < N) {
+            float C = 0;
+            for (int tx = 0; tx < threadsPerBlock; ++tx) {
+                float A = sharedA[tx][i];
+                float B = sharedB[tx][j];
+                C += A * B;
+            }
+            d_C[i * N + j] = C;
+        }
+    }
+}
+"""
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+    
+    if (A.is_cuda && B.is_cuda) {
+        int pitchC = N * sizeof(float);
+        char zero[6] = {0};
+        
+        cuStream_t dummy = cuStream_t();
+        if (cudanna::get_cudanna_plan() != nullptr) {
+            cudanna::get_cudanna_plan().execute<1>(zero, zero, M, K, N, 
+                                                   A.data_ptr<float>(), B.data_ptr<float>(), 
+                                                   (float*)0, M, N, &dummy);
+            cuStream_synchronize(dummy);
+            return (torch::Tensor){}, 0;
+        }
+    }
+
+    if (A.is_cuda || B.is_cuda) {
+        if (!A.is_contiguous() || !B.is_contiguous()) {
+            if (A.is_cuda) {
+                cuMemcpy(toGPU(A), A, cudaMemcpyHostToDevice, M * K * sizeof(float));
+            }
+            if (B.is_cuda) {
+                cuMemcpy(toGPU(B), B, cudaMemcpyHostToDevice, K * N * sizeof(float));
+            }
+        }
+    }
+
+    int threadsPerBlock = cuidevSM_maxThreads;
+    int blocksPerRow = (M + threadsPerBlock - 1) / threadsPerBlock;
+    int numBlocks = blocksPerRow * blocksPerRow;
+
+    matmul_kernel<<<numBlocks, threadsPerBlock>>>(A.data_ptr<float>(), B.data_ptr<float>(), 
+                                               (float*)0, M, K, N);
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+    if (M == 0 || K == 0 || N == 0)
+        return zeros<torch::Tensor>(1, 1);
+
+    if (A.is_cuda && B.is_cuda) {
+        int pitchA = K * sizeof(float);
+        int pitchB = N * sizeof(float);
+        int pitchC = N * sizeof(float);
+        char zero[6] = {0};
+        const float* d_A = A.data_ptr<float>();
+        const float* d_B = B.data_ptr<float>();
+        float* d_C = (float*)0;
+
+        cuStream_t dummy = cuStream_t();
+        if (cudanna::get_cudanna_plan() != nullptr) {
+            cudanna::get_cudanna_plan().execute<1>(zero, zero, M, K, N, 
+                                                   d_A, d_B, d_C, M, K, N, &dummy);
+            cuStream_synchronize(dummy);
+            return (torch::Tensor){}, 0;
+        }
+    }
+
+    if (A.is_cuda || B.is_cuda) {
+        if (!A.is_contiguous() || !B.is_contiguous()) {
+            if (A.is_cuda) {
+                cuMemcpy(toGPU(A

@@ -1,0 +1,49 @@
+
+
+To optimize the matrix-vector multiplication, we replace the underlying matmul operation with a custom CUDA kernel, enabling algorithmic fusion and performance improvements.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_vector_mult_kernel(const float* d_A, 
+                                           const float* d_B, 
+                                           float* d_C, 
+                                           int M, int K) {
+    int blockRow = blockIdx.y;
+    intblockCol = blockIdx.x;
+    int threadPos = threadIdx.x;
+
+    float C_row = 0.0;
+    for (int k = 0; k < K; ++k) {
+        C_row += d_A[blockRow*M + k] * d_B[blockCol + k];
+    }
+    if (threadPos < M) {
+        d_C[blockRow * M + threadPos] = C_row;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto C = torch::zeros(M, 1);
+
+    const int num_blocks_row = M / 256 + (M % 256 > 0);
+    const int num_blocks_total = num_blocks_row;
+
+    matrix_vector_mult_kernel<<<num_blocks_total, 256>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto C = torch::zeros(M, 1);
+
+    return C;
+}
+"""
+```

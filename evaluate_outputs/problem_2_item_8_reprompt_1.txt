@@ -1,0 +1,46 @@
+You need to ensure that the generated CUDA code compiles without errors when integrated with the torch extension framework.
+</think>
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <|"batch_size", "m", "k", "n">|>
+
+__global__ void batched_matmul_kernel(const float* A, const float* B, float* C, int batch_size, int m, int k, int n) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tz = threadIdx.z;
+    
+    if (ty + n < C->numel() || tx + m < C->numel() || tz + batch_size < C->numel())
+        return;
+
+    int idx = (batch_size * m * n) * tz + (m * n) * ty + n * tx;
+    float c = 0.0f;
+    for (int i = 0; i < k; ++i) {
+        c += A[batch_size * m * k * tz + m * k * ty + k * tx + i] * B[batch_size * k * n * tz + k * n * ty + n * tx + i];
+    }
+    C[batch_size * m * n * tz + m * n * ty + n * tx] = c;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto batch_size = A.size(0);
+    auto m = A.size(1);
+    auto k = A.size(2);
+    auto n = B.size(2);
+    
+    auto C_shape = {batch_size, m, n};
+    auto C = torch::zeros(C_shape);
+    
+    int num_blocks_per_grid = (m + 256 - 1) / 256;
+    int num_blocks_per_grid_m = (n + 256 - 1) / 256;
+    int num_blocks_per_grid_t = (batch_size + 256 - 1) / 256;
+    
+    batched_matmul_kernel<<<num_blocks_per_grid_t, 256, 256>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), batch_size, m, k, n);
+    
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

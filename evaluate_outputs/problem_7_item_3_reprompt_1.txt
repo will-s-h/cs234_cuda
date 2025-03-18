@@ -1,0 +1,57 @@
+The last attempt had formatting issues. Let's correct the CUDA source and cpp source strings to match the required format properly.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_addKernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    float sum = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        if (tx + k < M && ty + k < N) {
+            sum += A[tx + k] * B[ty + k];
+        }
+    }
+
+    C[bx * N + by] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    auto C = torch::zeros(M, N).to(A);
+    
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+    
+    matmul_addKernel<<<blocksPerGrid, threadsPerBlock>>>(A.data, B.data, C.data, M, K, N);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::empty(M, N).to(A);
+    
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+    
+    matmul_addKernel<<<blocksPerGrid, threadsPerBlock>>>(A.data, B.data, C.data, M, K, N);
+    
+    return C;
+}
+"""
+```

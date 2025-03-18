@@ -1,0 +1,37 @@
+The original output had some formatting issues, like incorrect indentation and missing semicolons. Let me try to correct that.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < M) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            sum += A[i*K + k] * B[k*N + i];
+        }
+        C[i*N] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+    auto size = M * N;
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr<M, float>(), B.data_ptr<M, float>(), C.data_ptr<M, float>(), M, K, N);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

@@ -1,0 +1,44 @@
+</think>
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx().row * blockDim().row + threadIdx().row;
+    int j = blockIdx().blockCol * blockDim().blockCol + threadIdx().blockCol;
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[i*K + k] * B[j*K + k];
+    }
+    C[i*N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num_rows = A.size(0);
+    int num_cols = B.size(1);
+    int batch = A.size(0);
+    
+    if (num_rows != B.size(1) || A.size(1) != B.size(1) || B.size(0) != num_cols) {
+        throw std::runtime_error("Incompatible matrix dimensions");
+    }
+    
+    const float* PitchA = A.data(). pitch;
+    const float* PitchB = B.data(). pitch;
+    float* PitchC = C.data(). pitch;
+    
+    auto size = num_rows * num_cols;
+    auto output = torch::zeros(batch, num_cols, sizeof(float));
+    
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+    
+    matmul_kernel<<<num_blocks, block_size>>>(A.data(), B.data(), output.data(), num_rows, num_cols, K);
+    
+    return output;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

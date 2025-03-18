@@ -1,0 +1,69 @@
+The matrix multiplication is between A (MxN) and B (NxM) and the output is C (MxM). So M is much larger than N.
+
+Now, to resolve the previous issue, ensure the following:
+
+1. The CUDA code is correctly implemented and compiles.
+
+2. The Python code correctly sets up the CUDA extension.
+
+Let me know if you need further assistance! I'm here to help resolve this.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int M, int N) {
+    int i = threadIdx.x;
+    for (int k = 0; k < N; ++k) {
+        float sum = 0.0f;
+        for (int j = 0; j < M; ++j) {
+            sum += A[j * N + k] * B[i * N + j];
+        }
+        C[i * M + j] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    
+    if (M < 512 || N < 512) {
+        return torch::matmul(A, B);
+    }
+
+    int numC = (M + 511) / 512;
+    int numB = (N + 511) / 512;
+
+    const float* dA = A.data_ptr<float>();
+    const float* dB = B.data_ptr<float>();
+    float* devC = torch::empty "<<1,512>>(M * N).cuda";
+
+    matmulKernel<<<numC, numB>>>(dA, dB, devC.data(), M, N);
+
+    std::vector<float*> localC;
+    std::vector<float*> localA;
+    for (int i = 0; i < numC; ++i) {
+        auto localA_start = i * 512;
+        auto localA_view = devC.subview<localA_start, 512, M, N>();
+        localA.push_back(localA_view.data());
+
+        auto localC_start = i * M;
+        auto localC_view = devC.subview<localC_start, M, 1, N>();
+        localC.push_back(localC_view.data());
+    }
+
+    auto localA views = localA;
+    auto localC views = localC;
+
+    matmulKernel<<<1, 512>>>(ddevC, ddevC, devC.data(), M, N);
+
+    return torch::empty<<"1,1>>(M, N).cuda";
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

@@ -1,0 +1,37 @@
+When I ran the first attempt, I received an error message saying that Ninja was not found. I don't know if that's correct or if it's just the first time. I was able to install Ninja via Homebrew, but perhaps I need to have C++ compiler tools installed as well. I don't have them, so the installation of the extension may fail. I'm sorry for the extra confusion.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void forward_kernel(
+    const float* input, 
+    float* output, 
+    int num_elements)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_elements) {
+        output[idx] = input[idx];
+    }
+}
+
+torch::Tensor forward(torch::Tensor input, torch::Tensor output) {
+    auto num_elements = input.numel();
+    auto output = torch::empty_like(input);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (num_elements + threadsPerBlock - 1) / threadsPerBlock;
+
+    forward_kernel<<<blocksPerGrid, threadsPerBlock>>>
+        (input.data_ptr().float(), output.data_ptr().float(), num_elements);
+
+    return output;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor input, torch::Tensor output);"
+)
+```

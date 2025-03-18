@@ -1,0 +1,42 @@
+
+
+To optimize the matrix-scalar multiplication, we can fuse the scalar multiplication and in-place addition into a single CUDA kernel. This reduces kernel calls and improves performance by reducing kernel launch overhead and global memory transactions.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void forward Kernel(const float* A, const float* s, float* C, int M, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        C[row * N + col] = A[row * N + col] * s[row * N + col];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor s) {
+    auto M = A.size(0);
+    auto N = A.size(1);
+    if (s.dim() == 1) {
+        s = s.squeeze();
+    } else if (s.dim() == 2) {
+        s = s.mean(dim=1);
+    }
+    auto C = torch::zeros_like(A);
+
+    int block_row = 128;
+    int block_col = 256;
+    int num_threads = block_row * block_col;
+    int num_blocks_row = (M + block_row - 1) / block_row;
+    int num_blocks_col = (N + block_col - 1) / block_col;
+
+    forward<<<num_blocks_row, num_blocks_col, num_threads>>>(A.data_ptr(0), s.data_ptr(0), C.data_ptr(0), M, N);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor s);"
+)
+```

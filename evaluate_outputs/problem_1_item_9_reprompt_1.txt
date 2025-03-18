@@ -1,0 +1,5 @@
+Note: If you encounter any errors, such as the one shown above, it may be because you need to install Ninja on your system. You can install it using:
+
+```bash
+sudo apt-get install ninja
+```

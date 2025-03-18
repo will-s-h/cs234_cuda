@@ -1,0 +1,99 @@
+The user is having trouble running their code because their custom CUDA kernel isn't compiling. They provided their code, which uses CUDA and PyTorch, but it's failing with a missing Ninja error. The user is a bit frustrated and confused about why this is happening and how to fix it.
+
+I need to help the user debug their custom CUDA kernel. Let's look at their code. It's a custom GEMM kernel that manually computes the matrix multiplication. However, it's possible that the implementation has some issues that are causing the compilation to fail.
+
+First, I notice that they're using some manual indexing and blocks, but PyTorch's extension API might not be the best fit for this. Maybe switching to using TVM or another compiler would help, but that's more complex.
+
+Alternatively, considering that the user is struggling with compilation, perhaps the CUDA code isn't correctly written or lacks necessary includes or extensions. Let me think of simpler ways to implement matrix multiplication in CUDA that might compile better.
+
+I remember that in the examples, they used __global__ functions with proper CUDA blocks and threads. Maybe the initial implementation had some syntax errors or missing includes. Let me try to simplify the kernel and ensure all necessary headers are included.
+
+Also, ensuring that the code uses the correct data types and device pointers is crucial. The user's code has some parts that might not be correctly handling the device (GPU) and the data types (using floats correctly).
+
+Let me outline the steps I should take:
+
+1. **Review the User's Code**: Check for any obvious syntax errors, missing includes, or incorrect CUDA function signatures.
+
+2. **Simplify the Kernel**: Look for simpler versions of GEMM kernels to see if they compile better. This might involve reducing the complexity or ensuring proper indexing.
+
+3. **Check Device Handling**: Ensure that all data is correctly transferred to the GPU and that the kernel is launching on the right device.
+
+4. **Use Standard Patterns**: Adhere to standard CUDA patterns and practices, such as using shared memory, proper block and thread configurations, and avoiding overly complex manual calculations.
+
+5. **Include Necessary Headers**: Make sure all required CUDA headers are included, such as <cuda_runtime.h> and <cublas.h> if using cuBLAS.
+
+6. **Test with Minimal Examples**: If possible, test simpler CUDA kernels first to isolate where the issue might be occurring.
+
+7. **Syntax and Style Compliance**: Ensure that the code follows CUDA coding standards, including correct indentation and function definitions.
+
+By systematically addressing each of these points, I should be able to identify why the user's CUDA code isn't compiling and provide a corrected version that works.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cublas.h>
+
+__global__ __transpose_gemm_kernel
+    (const float* restrict alpha, const float* restrict A,
+     const float* restrict B, float* restrict C,
+     int M, int N, int K, int stride_A, int stride_B,
+     int stride_C)
+{
+    const float* A_row = A + (blockIdx.x << 1) * stride_A;
+    const float* B_col = B + (blockIdx.y << 1) * stride_B;
+    float C_M[N] = {0};
+
+    for (int n = 0; n < N; n++) {
+        for (int k = 0; k < K; k++) {
+            float A_val = *A_row++;
+            float B_val = *B_col++;
+            C_M[n] += A_val * B_val;
+        }
+    }
+
+    C[blockIdx.y * stride_C + blockIdx.x] = C_M[0];
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+
+    if (K != B.size(0)) {
+        return torch::Tensor{}.empty();
+    }
+
+    auto C = torch::empty(M, N, A.element_type());
+    auto transA = C dust;
+    auto transB = C dust;
+
+    cublasHandle_t handle = cublasCUBLAS_getDefaultHandle();
+
+    cublasGEMM(
+        handle,
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        M,
+        N,
+        K,
+        alpha,
+        A.data_ptr(),
+        K,
+        B.data_ptr(),
+        K,
+        beta,
+        C.data_ptr(),
+    );
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```
+
+Note: This implementation uses cuBLAS's `cublasGEMM` function for efficient GEMM operation. It maintains the same interface as your

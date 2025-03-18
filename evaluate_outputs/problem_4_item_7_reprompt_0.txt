@@ -1,0 +1,49 @@
+
+
+To optimize the matrix-scalar multiplication by implementing a custom CUDA kernel, we can fuse this operation with an element-wise scaling to enhance performance. Here's the CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_scalar_mul_kernel(const float* A, const float* s, float* C, int M, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        C[row * N + col] = A[row * N + col] * s[row * N + col];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, float s) {
+    auto size = A.numel();
+    auto out = torch::zeros_like(A);
+    
+    int block_size = 256;
+    int num_blocks = (size + block_size - 1) / block_size;
+
+    matrix_scalar_mul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), &s, out.data_ptr(), A.size(0), A.size(1));
+
+    return out;
+}
+"""
+```
+
+The corresponding C++ source:
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, float s) {
+    auto size = A.numel();
+    auto out = torch::zeros_like(A);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    matrix_scalar_mul_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data(), &s, out.data(), A.size(0), A.size(1));
+
+    return out;
+}
+"""
+
+```
+
+This custom kernel efficiently fuses the matrix multiplication and scaling into a single CUDA operation, reducing kernel overhead and improving performance.

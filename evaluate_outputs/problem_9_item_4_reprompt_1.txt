@@ -1,0 +1,83 @@
+Here's another try:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_3d_kernel(const float* A, const float* B, float* out, int N, int M, int K, int L) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= N) {
+        return;
+    }
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (j >= M) {
+        return;
+    }
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[i * K + k] * B[k * L + j];
+    }
+    out[i * M + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    auto size = N * M * L;
+    auto out = torch::zeros(N, M, L, {static_cast<int64_t>(N)}, {static_cast<int64_t>(M)}, {static_cast<int64_t>(L)}, {0});
+
+    const int block_size = 256;
+    const int num_blocks = (K + block_size - 1) / block_size;
+
+    matmul_3d_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), N, M, K, L);
+
+    return out;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+</think>
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_3d_kernel(const float* A, const float* B, float* out, int N, int M, int K, int L) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i >= N || j >= M) {
+        return;
+    }
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[i * K + k] * B[k * L + j];
+    }
+    out[i * M + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    auto size = N * M * L;
+    auto out = torch::zeros(N, M, L, {static_cast<int64_t>(N)}, {static_cast<int64_t>(M)}, {static_cast<int64_t>(L)}, {0});
+
+    const int block_size = 256;
+    const int num_blocks = (K + block_size - 1) / block_size;
+
+    matmul_3d_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), N, M, K, L);
+
+    return out;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

@@ -1,0 +1,51 @@
+
+
+To optimize the matrix multiplication operation, we can fuse the multiplication and addition operations into a single custom CUDA kernel. This approach reduces kernel launch overhead and improves memory access patterns.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul fused kernel(
+    const float* A, 
+    const float* B, 
+    float* C,
+    int M, 
+    int N, 
+    int K)
+{
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    float Cij = 0f;
+    for (int k = 0; k < K; ++k) {
+        Cij += A[i*K + k] * B[k*N + j];
+    }
+    if (i < M && j < N) {
+        C[i*N + j] = Cij;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    // Pre-allocate the output tensor
+    auto C = torch::empty_float32(M, N, . reserves(K * max_dim));
+
+    // Choose grid and block sizes
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (K + threadsPerBlock - 1) / threadsPerBlock;
+
+    // Launch the kernel
+    matmul fused kernel<<<blocksPerGrid, threadsPerBlock>>>
+        (A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

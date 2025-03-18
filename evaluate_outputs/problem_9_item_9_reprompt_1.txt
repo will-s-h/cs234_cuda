@@ -1,0 +1,44 @@
+Alright, I'll reformat the CUDA source code to match the specific requirements and formatting shown in the examples.
+
+Here's the corrected CUDA source code with proper formatting and alignment:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulkernel(
+    const float* __global__ A,
+    const float* __global__ B,
+    float* __global__ C,
+    int N,
+    int M,
+    int L,
+    int K) {
+    int tx = threadIdx.x;
+    int block = blockIdx.x;
+    int stride = blockDim.x * gridDim.y;
+    int row = block * stride + tx;
+    if (row < N) {
+        for (int k = 0; k < K; k++) {
+            C[row * M + tx * L + k] = A[row * M + k] * B[k * L + tx];
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num_threads = 256;
+    int num_block = ((int)(A.numel() / num_threads) + 1) / 2;
+    matmulkernel<<<num_block, num_threads>>>(
+        A.data_ptr(), B.data_ptr(), 
+        B.numel() / B.size(1), 
+        A.size(1), B.size(1), 
+        B.size(1), 
+        B.size(0))
+    ;
+    return A;
+}
+"""
+
+ cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

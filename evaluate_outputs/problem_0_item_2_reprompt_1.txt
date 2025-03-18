@@ -1,0 +1,41 @@
+(Hint: In order to use C++17 features like const in CUDA kernels, you may need to update your CUDA toolkit version. But that's beyond this task.)
+
+</think>
+
+Here is the optimized CUDA source code for the matrix multiplication model:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    if (i < N && j < N) {
+        float sum = 0;
+        for (int k = 0; k < N; ++k) {
+            sum += A[i * N + k] * B[k * N + j];
+        }
+        C[i * N + j] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int size = A.numel();
+    int dim = sqrt(size);
+    auto out = torch::zeros(dim, dim, device=A.device(), dtype=A.dtype);
+    
+    const int block_size = 256;
+    const int num_blocks = (dim + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), dim);
+
+    return out;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

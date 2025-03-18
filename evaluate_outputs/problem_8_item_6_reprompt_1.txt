@@ -1,0 +1,43 @@
+Additionally, the output must not include any additional text, just the CUDA source and the cpp_source as two separate code blocks.
+</think>
+
+```python
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_relu_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < M) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            sum += A[i + k * M] * B[k + j * K];
+        }
+        if (j < N) {
+            C[i + j * M] = std::max(0.0f, sum);
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+
+    auto size = M * N;
+    auto C = torch::zeros(M, N);
+
+    int block_size = 256;
+    int num_blocks = (M / block_size) + (M % block_size != 0 ? 1 : 0);
+
+    matmul_relu_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

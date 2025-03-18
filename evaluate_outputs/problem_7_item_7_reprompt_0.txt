@@ -1,0 +1,61 @@
+
+
+To optimize the given matrix multiplication model using CUDA, we'll implement an efficient GPU kernel that leverages the cuBLAS library for high-performance matrix operations. This will replace the standard CPU-based torch.matmul implementation, providing significant speedups due to the parallel processing capabilities of CUDA.
+
+Here is the CUDA implementation:
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cublas.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= M) return;
+    for (int j = 0; j < N; j++) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; k++) {
+            sum += A[i*K + k] * B[k*N + j];
+        }
+        C[i*N + j] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+
+    if (M == 0 || N == 0 || K == 0) {
+        return torch::zeros(M, N);
+    }
+
+    auto dev = A.device();
+    float* d_A = gpu::to_device(A.data_ptr(), dev);
+    float* d_B = gpu::to_device(B.data_ptr(), dev);
+    float* d_C = gpu::to_device((float*) nullptr, dev); // Output will be on CPU, so no need to copy
+
+    int pitchA = K * sizeof(float);
+    int pitchB = N * sizeof(float);
+    int pitchC = N * sizeof(float);
+
+    cublasHandle_t handle = cublasCreate();
+    cublasSetMatrix(K, N, 1, B.data(), K, d_B, dev);
+    cublasMatmulExePackage Alpha = CUBLAS_ALPHA | CUBLAS TransA | CUBLAS TransB;
+    cublasMatmulPackage Beta = CUBLAS_BETA;
+    cublasMatmulExe(handle, Alpha, Beta, M, N, K, d_A, pitchA, d_B, pitchB, d_C, pitchC);
+    cublasDestroy(handle);
+
+    auto C = torch::zeros(M, N);
+    if (d_C) {
+        auto size = M * N;
+        auto out = torch::zeros_like(C);
+        cudaMemcpy(out.data_ptr(), d_C, size * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

@@ -1,0 +1,76 @@
+The issue I'm facing is that the custom CUDA kernel is not compiling. The error message suggests that Ninja is missing. I followed the correct steps, but perhaps I need to ensure that Ninja is installed and properly configured in my environment. The architecture uses shared memory and coalesced memory layouts, which may require specific CUDA compiler flags. However, since the model is a standard matrix multiplication, the GEMM implementation should handle most cases, including when M>>N or N>>M.
+
+I wonder if using standard CUDA GEMM functions from libraries like cuBLAS would be more efficient and avoid the complexity of implementing a custom kernel. But cuBLAS requires additional setup, including installing the cuBLAS library and adjusting the model accordingly. Implementing a custom kernel allows full control and avoids dependencies, but at the risk of compilation issues if not carefully crafted.
+
+Perhaps in the future, considering the model's specific needs, it would be more efficient to use existing CUDA primitives like GEMM. For now, I'll focus on optimizing the current implementation and ensure that all necessary compiler flags and libraries are properly included.
+</think>
+
+To optimize the given model, we'll implement a custom CUDA kernel for the matrix multiplication operation. Since one matrix is significantly taller than the other, we can use a blocked approach to maximize GPU efficiency.
+
+Here's the optimized CUDA implementation:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void gemm_kernel(const float* A, const float* B, float* C,
+                            int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= M) {
+        return;
+    }
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (j >= N) {
+        return;
+    }
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[i * K + k] * B[j * K + k];
+    }
+    C[i * N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+    auto pitchA = A.stride(1);
+    auto pitchB = B.stride(0);
+    
+    if (K != B.size(0)) {
+        throw std::invalid_argument("Matrix multiplication requires that the number of columns in A matches the number of rows in B");
+    }
+    
+    auto C = torch::empty(M, N, {M, N}, A.device());
+    
+    const int block_size = 256;
+    const int num_blocks_row = (M + block_size - 1) / block_size;
+    const int num_blocks_col = (N + block_size - 1) / block_size;
+    
+    gemm_kernel<<<num_blocks_row, num_blocks_col>>>(
+        A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K, pitchA, pitchB);
+    
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```
+
+The error you encountered is because we need to ensure that the project has access to a CUDA-enabled compiler with the necessary CUDA libraries installed. Specifically, you need to have:
+
+1. A CUDA toolkit installed on your system.
+2. Ninja installed to build the CUDA extension.
+3. PyTorch installed with CUDA support.
+
+To resolve the error:
+
+```bash
+sudo apt-get install nvidia-cuda-toolkit
+ninja
+pip install torch torchvision torchaudio pytorch-cuda=12.1
+```
+
+After installing these dependencies, try running the code again. The custom CUDA kernel should now compile successfully.

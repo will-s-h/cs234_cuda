@@ -1,0 +1,45 @@
+
+
+To optimize the matrix-scalar multiplication with a custom CUDA kernel, we can fuse the multiplication into a single kernel for better performance. Here's the optimized CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_scalar_mult_kernel(const float* A, const float* s, float* C, int M, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        C[row * N + col] = A[row * N + col] * s[row];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, float s) {
+    int num_rows = A.size(0);
+    int num_cols = A.size(1);
+    if (s == 0.0f) {
+        torch::Tensor result(A);
+        result.zero_();
+        return result;
+    }
+
+    auto size = num_rows * num_cols;
+    auto *A_ptr = A.data_ptr<float>();
+    auto *C_ptr = torch::empty Alleach<2>(num_rows, num_cols, size).data_ptr<float>();
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (num_rows + threadsPerBlock - 1) / threadsPerBlock;
+
+    matrix_scalar_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(A_ptr, &s, C_ptr, num_rows, num_cols);
+
+    return torch::from_dlpack(torch::dlpack::from CPU( C));
+}
+"""
+```
+
+The corresponding C++ source maintains the same function signature:
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, float s);
+"""
+```

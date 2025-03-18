@@ -1,0 +1,43 @@
+Also, if your code compiles, then I will check it for correctness. If not, don't be discouraged. Try to figure out why it's not compiling and correct it. Only respond with the cuda_source and cpp_source strings, as specified.
+
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* dA, const float* dB, float* dC, int N, int M, int K, int L) {
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int txBlock = blockIdx.x * blockDim.x + threadIdx.x;
+    int tyBlock = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    float Celement = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        Celement += dA[txBlock * M + k] * dB[k * L + ty];
+    }
+    
+    dC[txBlock * L + ty] = Celement;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+    
+    if (A.is_cuda && B.is_cuda && A.dtype == float && B.dtype == float) {
+        int numThreads = BLOCK Dim X * BLOCK Dim Y;
+        int numBlocksPerGrid = (N + numThreads - 1) / numThreads;
+        
+        matmul_kernel<<<numBlocksPerGrid, numThreads>>>(A.data_ptr(), B.data_ptr(), A.data_ptr(), N, M, K, L);
+    }
+    
+    return torch::zeros_like(A);
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

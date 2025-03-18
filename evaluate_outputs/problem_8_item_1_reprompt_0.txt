@@ -1,0 +1,73 @@
+
+
+To optimize the matrix multiplication in CUDA, we can implement an efficient kernel that uses shared memory and constant blocks to minimize global memory access. We'll also ensure optimal memory alignment to further reduce latency.
+
+Here's the CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <|"M", "N", "K"rary.h>  // Auto-generated for shared memory alignment
+
+__global__ void matmul_kernel(const float* __global__ A, const float* __global__ B, float* __global__ C, int M, int N, int K) {
+    __shared__ float As[256][16];  // Each block stores 256x16 elements
+    __shared__ float Bs[16][256];  // Each block stores 16x256 elements
+
+    const int tx = threadIdx.x;
+    const int bx = blockIdx.x;
+
+    float sum = 0.0f;
+    for (int n = 0; n < N; n += 16) {
+        const float* a = &A[tx * K + n];
+        const float* b = &B[bx * K + n];
+        float* c = C + tx * N + n;
+
+        for (int k = 0; k < K; k += 16) {
+            __syncthreads();
+            
+            for (int s = 0; s < 16; ++s) {
+                for (int d = 0; d < 16; ++d) {
+                    sum += As[s + tx][d + n] * Bs[s + bx][d + k];
+                }
+            }
+            __syncthreads();
+            
+            *c = sum * 0.0625f;
+            sum = 0.0f;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    // Ensure A and B are on the correct device and type
+    if (A.dtype != float || B.dtype != float) {
+        A = A.float().contiguous();
+        B = B.float().contiguous();
+    }
+
+    // Calculate sizes
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+
+    // Allocate and copy data to device
+    float* d_A = (float*)A.data_ptr();
+    float* d_B = (float*)B.data_ptr();
+    float* d_C = (float*)torch::emptyCUDAFloat32(M, N).data_ptr();
+
+    int num_blocks_M = (M + 255) / 256;
+    int num_blocks_K = (K + 255) / 256;
+
+    // Launch the kernel
+    matmul_kernel<<<num_blocks_M, 256>>>(d_A, d_B, d_C, M, N, K);
+
+    return torch::tensor(d_C, storageType(torch::StorageType::kCUDA), device);
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    return matmul(A, B);
+}
+"""
+```

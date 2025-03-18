@@ -23,15 +23,15 @@ df_l1 = dataset["level_1"].to_pandas()
 l1_samples = df_l1[df_l1.Kernel_Name == df_l1.Op_Name]
 
 # hyperparameters
-model_str = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-short_str = "Qwen-1.5B"
+model_str = "Qwen/Qwen2.5-Coder-14B-Instruct"
+short_str = "Qwen2.5-Coder-14B"
 dtype = "auto"
 batch_size = 10           # size of our batch (number of prompts)
 reprompts  = 2           # number of times we try while including the error message. includes the first prompt
 num_problems = 10
 temperature = 1
 max_new_tokens = 1_000
-add_think = True
+add_think = False
 save_files = True
 
 tokenizer = AutoTokenizer.from_pretrained(model_str, torch_dtype=dtype, cache_dir=cache_dir)

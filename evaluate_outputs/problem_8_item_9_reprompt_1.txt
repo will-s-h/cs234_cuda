@@ -1,0 +1,94 @@
+Alright, let me think through this step by step.
+
+First, I need to optimize the matrix multiplication kernel. The existing `torch.matmul` is too high-level and not optimized for CUDA. To get the best performance, I should implement a custom CUDA kernel that uses shared memory and efficient memory access patterns.
+
+The key optimizations are:
+1. **Shared Memory Utilization**: Using shared memory to reduce global memory latency during the multiplication.
+2. **Constant Thread Block Size**: Choosing a block size that allows for the most efficient occupancy. For CUDA, a block size of 256 is commonly effective.
+3. **Memory Alignment**: Ensuring that the input and output tensors are aligned in shared memory to avoid bank conflicts and improve memory access patterns.
+4. **Avoid Scalar Operations**: Using matrix operations within the kernel to reduce the number of operations and increase throughput.
+
+Let's structure the CUDA kernel:
+
+1. **Kernel Launch Configuration**: The grid and block dimensions. For a batch matrix multiplication, using a grid size that is a multiple of the block size (e.g., 2 * block_size) ensures efficient resource usage.
+2. **Shared Memory Access**: Each thread block will load a sub-matrix of A and B into shared memory to reduce global memory access.
+3. **Matrix Multiplication in Shared Memory**: Within each block, each thread will compute its part of the output matrix by multiplying corresponding elements from the loaded sub-matrices.
+4. **Output Storeback**: After all computations within a block are done, each thread will store its part of the output matrix back into global memory.
+
+I will also ensure that the kernel uses `float` precision for better performance on CUDA hardware.
+
+Considering the dimensions of the input matrices (M x K and K x N), the block size is chosen such that it efficiently divides these dimensions, ensuring minimal divergence and maximum thread occupancy.
+
+Now, I'll implement these optimizations in the CUDA kernel.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int tx = threadIdx.x;
+    int by = blockIdx.y;
+    int txBlock = 256;
+    __shared__ float Asub[256][256];
+    __shared__ float Bsub[256][256];
+    
+    int sy = by * txBlock;
+    int sx = tx;
+    
+    for (int k = 0; k < K; k += txBlock) {
+        if (tx >= M || sy + k >= K) {
+            return;
+        }
+        int ry = sy + k;
+        float *B_t = B + ry * N;
+        
+        for (int i = 0; i < M; i++) {
+            if (i * N + sy + k < B->numElement()) {
+                Bsub[i][tx] = *B_t++;
+            } else {
+                break;
+            }
+        }
+        
+        for (int i = 0; i < M; i++) {
+            if (i < M) {
+                Asub[i][tx] = *A++;
+            }
+        }
+        
+        float *Csub = C + i * N + sy;
+        for (int j = 0; j < txBlock; j++) {
+            if (j < N) {
+                float sum = 0.0f;
+                for (int k = 0; k < txBlock; k++) {
+                    sum += Asub[i][k] * Bsub[k][j];
+                }
+                if (j < tx) {
+                    *Csub++ = sum;
+                }
+            }
+        }
+    }
+}
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+    
+    auto C = torch::zeros(M, N);
+    
+    const int block_size = 256;
+    const int num_blocks = (K + block_size - 1) / block_size;
+    
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+    
+    return C;
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""

@@ -1,0 +1,66 @@
+
+
+To optimize the matrix-vector multiplication, we fuse the `matmul` and `transpose` (if necessary) with the `scale` and `add` operations. However, in this specific case, the model performs a single matrix-vector multiplication, so we can directly implement a custom CUDA kernel for this operation.
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_vector_kernel(const float* d_A, const float* d_B, float* d_C, int M, int K) {
+    int block_idx = blockIdx(0);
+    int num_blocks = (M + (K / warp_size) - 1) / (K / warp_size);
+    if (block_idx >= num_blocks) {
+        return;
+    }
+    
+    const float* A = d_A + block_idx * K;
+    const float* B = d_B;
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[k] * B[k];
+    }
+    
+    d_C[block_idx] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    if (B.size(0) != K) {
+        return torch::empty(0);
+    }
+    
+    int size = M;
+    auto C = torch::zeros(1, size, sizeof(float));
+    
+    int blocksPerGrid = (M + ( warp_size - 1 )) / warp_size;
+    if (blocksPerGrid * warp_size > (M + warp_size -1 )) {
+        blocksPerGrid = (M + warp_size -1 ) / warp_size;
+    }
+    
+    matmul_vector_kernel<<<blocksPerGrid, warp_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    if (B.size(0) != K) {
+        return torch::empty(0);
+    }
+    
+    int size = M;
+    auto C = torch::zeros(1, size, sizeof(float));
+    
+    int blocksPerGrid = (M + warp_size -1 ) / warp_size;
+    
+    matmul_vector_kernel<<<blocksPerGrid, warp_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K);
+    
+    return C;
+}
+"""
+```

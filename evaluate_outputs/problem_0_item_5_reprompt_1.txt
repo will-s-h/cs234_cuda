@@ -1,0 +1,57 @@
+Also, include a newline after the source code string in the 'torch cpp source' output.
+
+Okay, I'll try again to correctly format the CUDA source and C++ header properly this time. The key changes include removing the old code and ensuring the new kernel is properly integrated into the torch extension.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared_mem.h>
+
+__global__ void matmul_kernel(const float* const A, const float* const B, float* const C, int N) {
+    int row = blockIdx.y;
+    int col = blockIdx.x;
+    int warpRow = (blockIdx.y + (gridIdx.y >> 8)) & 0x1f;
+    int warpCol = (blockIdx.x + (gridIdx.x >> 8)) & 0x1f;
+    int pitch = warpRow * N + N;
+    int tile = warpRow * N + warpCol * N;
+
+    shared<float> row_A = shareload(row, warpRow);
+    shared<float> col_B = shareload(col, warpCol);
+
+    float Cval = 0.0f;
+    for (int n = 0; n < N; n++) {
+        Cval += row_A[n] * col_B[n];
+    }
+
+    atomicAdd(C, tile + col + row * N);
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto grid = (
+        num_blocks = ((N + 255) / 256),
+        num threads = 256
+    );
+    
+    int size = N * N;
+    auto C = torch::emptyCUDA(size, N, N);
+    
+    matmul_kernel<<<num_blocks, num_threads>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), N);
+
+    return C;
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto N = A.size(0);
+    auto size = N * N;
+
+    auto C = torch::emptyCUDA(size, N, N);
+
+    matmul_kernel<<<((N + 255) / 256), 256>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), N);
+
+    return C;
+}
+"""
+```

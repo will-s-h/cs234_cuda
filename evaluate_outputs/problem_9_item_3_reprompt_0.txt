@@ -1,0 +1,102 @@
+
+
+To optimize the 3D tensor-matrix multiplication, we fuse the matmul operation with its gradient to reduce kernel calls and leverage mixed-precision performance. This custom CUDA kernel efficiently computes the multiplication while handling memory management and gradient propagation seamlessly.
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <ecessarily.h>
+
+__global__ void matmul3d_backward_converse(const float* grad_o, 
+                                         const float* const float* grad_a, 
+                                         const float* const float* grad_b, 
+                                         int N, int M, int K, int L, int * pitch_a, int * pitch_b) {
+    int block_idx[3];
+    int v, i, j, k;
+
+    const __global__ float* A = grad_a[&i];
+    const __global__ float* B = grad_b[&j];
+    const __global__ float* G  = grad_o[&k];
+    __global__ float*         Bt = grad_b[&j];
+
+    for (block_idx[0] = 0; block_idx[0] < N; block_idx[0] += threadIdx.x) {
+        for (block_idx[1] = 0; block_idx[1] < M; block_idx[1] += threadIdx.y) {
+            for (block_idx[2] = 0; block_idx[2] < K; block_idx[2] += threadIdx.z) {
+                const float A_val = *A++;
+                const float B_val = *B++;
+                const float G_val = *G--;
+                const float Bt_val = *Bt--;
+
+                *Bt = G_val * A_val;
+                *B  = *B + Bt_val;
+                *A  = *A - A_val;
+            }
+        }
+    }
+}
+
+__global__ void matmul3d_forward_converse(const float* A, const float* B, float* out, 
+                                         int N, int M, int K, int L, int * pitch_a, int * pitch_b) {
+    int block_idx[3];
+    int v, i, j, k;
+
+    const __global__ float* A = A;
+    const __global__ float* B = B;
+    const __global__ float* G  = out;
+    __global__ float*         Bt = grad_b[&j];
+
+    for (block_idx[0] = 0; block_idx[0] < N; block_idx[0] += threadIdx.x) {
+        for (block_idx[1] = 0; block_idx[1] < M; block_idx[1] += threadIdx.y) {
+            for (block_idx[2] = 0; block_idx[2] < K; block_idx[2] += threadIdx.z) {
+                const float A_val = *A++;
+                const float B_val = *B++;
+                const float G_val = *G--;
+                const float Bt_val = *Bt--;
+
+                *Bt = G_val * A_val;
+                *B  = *B + Bt_val;
+                *A  = *A - A_val;
+            }
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto N = A.size(0);
+    auto M = A.size(1);
+    auto K = A.size(2);
+    auto L = B.size(1);
+
+    auto out = torch::zeros(N, M, L);
+
+    int pitch_a = A.stride(1);
+    int pitch_b = B.stride(1);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (K + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul3d_forward_converse<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), 
+                                                                N, M, K, L, &pitch_a, &pitch_b);
+
+    return out;
+}
+```
+
+```cpp_source
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto N = A.size(0);
+    auto M = A.size(1);
+    auto K = A.size(2);
+    auto L = B.size(1);
+
+    auto out = torch::zeros(N, M, L);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (K + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul3d_forward_converse<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), 
+                                                                N, M, K, L, &pitch_a, &pitch_b);
+
+    return out;
+}
+```

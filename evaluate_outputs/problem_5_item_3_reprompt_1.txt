@@ -1,0 +1,65 @@
+Okay, so I need to optimize the given torch model using CUDA. The model performs a matrix multiplication with large dimensions. Matrix multiplication is a compute-intensive operation, especially with large K dimensions. I should look for ways to optimize this in CUDA.
+
+First, I notice that the current implementation uses torch.matmul, which is already highly optimized. But perhaps there's room for further optimization by implementing a custom CUDA kernel and using techniques like dimension-specific constants for better performance.
+
+I should start by implementing a custom CUDA kernel for matrix multiplication. This kernel will perform the multiplication with shared memory to reduce global memory access latency.
+
+Next, dimension-specific constants could be used to optimize the kernel further. For example, defining the number of blocks per grid based on the largest possible block size, allowing for efficient occupancy and better utilization of the GPU's resources.
+
+I should make sure to implement the custom kernel and set up the necessary helper functions, including the helper.cu file and its .so library, to ensure compatibility and ease of use within the PyTorch framework.
+
+I also need to verify that the custom kernel works correctly by comparing its output with the reference implementation (torch.matmul) on a small test case. If the results match, it's a good sign that the kernel is correctly implemented.
+
+Once everything is set up and validated, the custom CUDA operator should provide better performance compared to the standard torch.matmul implementation.
+</think>
+
+To optimize the matrix multiplication operation, we'll implement a custom CUDA kernel with dimension-specific constants and use shared memory for better performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    __shared__ float row[16];
+    __shared__ float col[16];
+    
+    int b, tx, tc;
+    tx = threadIdx.x;
+    tc = (blockIdx.y) + (blockIdx.x) * (K / (blockSize_w - 1));
+    b = tx < K;
+    
+    row[tx] = A[(blockIdx.y) * K + tx];
+    col[tx] = B[tc * N + tx];
+    
+    for (int i = 0; i < K / (blockSize_w - 1); ++i) {
+        C[(blockIdx.y)*N + tc + (blockIdx.x)*K] += row[tx] * col[tx];
+        if (i < K / (blockSize_w - 1) - 1) {
+            __synchrouin() __syncthreads();
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = B.size(0);
+    
+    auto C = torch::zeros(M, N, false, A.device(), A.dtype());
+    
+    const int BLOCK_SIZE = 16;
+    const int numBlocks = (K + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    matmulKernel<<<M, numBlocks>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+    return matmul_fused(M, N, K, A, B);
+}
+"""
+```

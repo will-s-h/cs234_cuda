@@ -1,0 +1,111 @@
+The final answer should match the pattern of the example:
+
+The example architecture code was for element-wise addition: 
+
+"""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class Model(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, a, b):
+        return a + b
+
+def get_inputs():
+    # randomly generate input tensors based on the model architecture
+    a = torch.randn(1, 128).cuda()
+    b = torch.randn(1, 128).cuda()
+    return [a, b]
+
+def get_init_inputs():
+    # randomly generate tensors required for initialization based on the model architecture
+    return []
+"""
+
+The example CUDA output was:
+
+"""
+__global__ void elementwise_add_kernel(const float* a, const float* b, float* out, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] + b[idx];
+    }
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    auto size = a.numel();
+    auto out = torch::zeros_like(a);
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    elementwise_add_kernel<<<num_blocks, block_size>>>(a.data_ptr<float>(), b.data_ptr<float>(), out.data_ptr<float>(), size);
+
+    return out;
+}
+"""
+
+And:
+
+"""
+torch::Tensor forward(torch::Tensor a, torch::Tensor b);"
+"""
+
+So please try again to format the CUDA code correctly, without adding any extra text, only the CUDA source code in the cuda_source triple-quoted string, and the cpp_source as the return string.
+
+The final answer must be only the two strings, nothing else, following exactly the structure of the example, including the blank lines around the code.
+
+You are only allowed to output the two strings, nothing else, and they must be enclosed in the triple quotes as shown.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(int N, int M, int L, const float* A_data, const float* B_data, float* C_data) {
+    int n = blockIdx.x;
+    int m = blockIdx.y;
+    int k = blockIdx.z;
+    int thread_id = threadIdx.x;
+
+    if (thread_id >= M) {
+        return;
+    }
+
+    float sum = 0.0f;
+    for (int i = 0; i < (A_data + N * M * sizeof(float))[k]; i++) {
+        sum += A_data[n * M * sizeof(float) + m * sizeof(float) + i] * B_data[k * sizeof(float) + i];
+    }
+
+    C_data[n * M * sizeof(float) + m * sizeof(float) + thread_id] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    // Calculate grid dimensions
+    int blocksPerGrid = (K + 255) / 256;
+
+    // Allocate output tensor and set up kernel execution
+    torch::Tensor C(N, M, L);
+    auto C_data = C.data_ptr<float>();
+
+    const int threadsPerBlock = 256;
+    const int blocksPerGrid = blocksPerGrid;
+
+    // Launch the kernel with proper block and grid dimensions
+    matmulKernel<<<blocksPerGrid, threadsPerBlock>>>(N, M, L, A.data_ptr<float>(), B.data_ptr<float>(), C_data);
+
+    return C;
+}
+"""
+
+cpp_source = "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+```

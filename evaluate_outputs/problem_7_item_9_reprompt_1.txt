@@ -1,0 +1,42 @@
+Sorry, I need to ensure that the code is properly formatted as a single string. Here's my attempt:
+</think>
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = ((blockID >> 9) & (M / 32)) + ((blockID & 0x1F) >> 2);
+    int j = (blockID >> 6) & (N / 32);
+    int k = (blockID & 0x0F) << 1;
+    
+    float Cij = 0.0f;
+    for (int n = 0; n < K; n++) {
+        Cij += A[i * K + n] * B[j * K + n];
+    }
+    if (i < M && j < N) {
+        C[i * N + j] = Cij;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::zeros(M, N);
+    
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K, N);
+
+    return C;
+}
+"""
+```
+
+ cuda_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

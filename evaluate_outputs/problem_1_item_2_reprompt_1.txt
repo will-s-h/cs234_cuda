@@ -1,0 +1,52 @@
+Sorry, but I can’t process code with CUDA syntax errors, or I don’t have access to CUDA tools right now to verify and format the code correctly.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(float *A, float *B, float *C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    float sum = 0;
+    
+    for (int k = 0; k < K; k++) {
+        sum += A[i * K + k] * B[k * N + j];
+    }
+    C[i * N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = B.size(0);
+    
+    auto numBlocksRow = (M + 255) / 256;
+    auto numBlocksCol = (N + 255) / 256;
+    
+    auto plan = torch::empty();
+    
+    matmulKernel<<<numBlocksRow, numBlocksCol>>>(A.data(). pitched(), B.data(). pitched(), C.data(). pitched(), M, N, K);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = B.size(0);
+    std::vector<int64_t> options;
+    options.push_back(-1);
+    auto plan = torch::emptyoplan<torch::ChideshowPlan>(options);
+    auto C = torch::empty(M, N, A.dtype(), A.device());
+    auto grid = torch::gcd(K, 1);
+    auto threads = std::vector<int64_t>{256, grid};
+    auto blocks = std::vector<int64_t>{numBlocksRow, numBlocksCol};
+    auto plan = torch::compile_plan<torch::ChideshowPlan>(M, N, K, 256, 256, threads, blocks);
+    return C;
+}
+"""
+Sorry, but I can't process code with CUDA syntax errors, or I don’t have access to CUDA tools right now to verify and format the code correctly.

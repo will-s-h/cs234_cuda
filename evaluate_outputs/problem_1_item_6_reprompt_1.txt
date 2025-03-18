@@ -1,0 +1,54 @@
+I've reviewed the generated CUDA code, and noticed that the `cuda_source` string included blank lines and the kernel function signature was not matching the intended syntax. I've adjusted it to strictly follow the examples.
+
+The `cpp_source` string now correctly captures only the `forward` method and its signature, without any additional content.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* dA, const float* dB, float* dC, int M, int K, int N) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tx_row = (M + BLOCK_SIZE) / BLOCK_SIZE;
+    int by = (N + BLOCK_SIZE) / BLOCK_SIZE;
+    int bx = (tx < tx_row * BLOCK_SIZE) ? (tx + tx_row * BLOCK_SIZE) : 0;
+    int cy = (ty < by * BLOCK_SIZE) ? (ty + by * BLOCK_SIZE) : 0;
+    
+    float Celement = 0.0f;
+    for (int i = 0; i < K; i++) {
+        Celement += dA[bx + i] * dB[cy + i];
+    }
+    dC[tx * N + ty] = Celement;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::zeros(M, N);
+    
+    int BLOCK_SIZE = 256;
+    int num_blocks_per_row = (M + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int num_blocks_per_col = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    
+    matmul_kernel<<<num_blocks_per_row, num_blocks_per_col>>>(A.data(), B.data(), C.data(), M, K, N);
+    
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    auto C = torch::zeros(M, N);
+    matmul_kernel(M, K, N, A.data(), B.data(), C.data());
+    return C;
+}
+"""
+```

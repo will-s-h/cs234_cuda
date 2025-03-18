@@ -1,0 +1,42 @@
+
+
+To optimize the matrix-scalar multiplication model using a custom CUDA kernel, we replace the standard `torch::mul` operation with a custom CUDA kernel for better performance. The kernel will execute element-wise multiplication on the GPU using shared memory for faster access.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_scalar_mult_kernel(const float* A, float scalar, float* out, int M, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        out[row * N + col] = A[row * N + col] * scalar;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, float s) {
+    int numElements = A.numel();
+    int numBlocksRow = numElements / N;
+    int numBlocksCol = N / M;
+    int threadsPerBlock = M * N;
+    
+    matrix_scalar_mult_kernel<<<numBlocksRow, numBlocksCol>>>(A.data_ptr(), s, A.data_ptr(), M, N);
+    return A;
+}
+"""
+```
+
+The corresponding C++ bindings will mirror the CUDA implementation, maintaining the same interface while utilizing CUDA acceleration.
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, float s) {
+    int numElements = A.numel();
+    int numBlocksRow = numElements / N;
+    int numBlocksCol = N / M;
+    int threadsPerBlock = M * N;
+    
+    matrix_scalar_mult_kernel<<<numBlocksRow, numBlocksCol>>>(A.data_ptr(), s, A.data_ptr(), M, N);
+    return A;
+}
+"""
+```

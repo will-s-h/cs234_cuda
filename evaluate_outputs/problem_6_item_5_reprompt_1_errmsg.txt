@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/home/ubuntu/cs234_cuda/reward_model.py", line 77, in reward
+    cuda_mod = load_inline(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/torch/utils/cpp_extension.py", line 1723, in load_inline
+    return _jit_compile(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/torch/utils/cpp_extension.py", line 1798, in _jit_compile
+    _write_ninja_file_and_build_library(
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/torch/utils/cpp_extension.py", line 1888, in _write_ninja_file_and_build_library
+    verify_ninja_availability()
+  File "/home/ubuntu/.local/lib/python3.10/site-packages/torch/utils/cpp_extension.py", line 1945, in verify_ninja_availability
+    raise RuntimeError("Ninja is required to load C++ extensions")
+RuntimeError: Ninja is required to load C++ extensions

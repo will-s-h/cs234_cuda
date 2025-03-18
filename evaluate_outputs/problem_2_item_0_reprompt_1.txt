@@ -1,0 +1,99 @@
+Additionally, in the previous attempt, the C++ source code was incorrect because it didn't have the proper method signature for forward. The forward method must be a member function of a class, and it must take a list of Tensor inputs and return a list of Tensor outputs.
+
+So, the new correct answer should be:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void batched_matmulKernel(float* A, float* B, float* C, int batch_size, int m, int k, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < m) {
+        for (int j = 0; j < n; j++) {
+            float sum = 0.0f;
+            for (int l = 0; l < k; l++) {
+                sum += A[i * k + l] * B[j * k + l];
+            }
+            C[i * n + j] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto batch_size = A.size(0);
+    auto m = A.size(1);
+    auto k = A.size(2);
+    auto n = B.size(2);
+    
+    if (A.size(1) != B.size(1)) {
+        throw std::invalid_argument("Matrix sizes are incompatible for multiplication.");
+    }
+    
+    std::unique_ptr<float[]> dA(A.data(), A.data + A.numel());
+    std::unique_ptr<float[]> dB(B.data(), B.data + B.numel());
+    std::unique_ptr<float[]> dC(C.data(), C.data + C.numel());
+    
+    int num_blocks = m / m_tpb + (m % m_tpb != 0 ? 1 : 0);
+    batched_matmulKernel<<<num_blocks, m_tpb>>>(dA, dB, dC, batch_size, m, k, n);
+    
+    return std::make_tuple(dC.get(), dC.get() + C.numel());
+}
+"""
+
+ cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+
+But wait, the code above doesn't have the proper forward function signature because it's missing the class definition and the method needs to be part of a class. In the example CUDA output, the forward method is part of a class and takes a list of Tensors and returns a list of Tensors. So I need to adjust the code to match that.
+
+To fix this, I'll wrap the kernel in a C++ class and properly define the forward method.
+
+Here is the corrected CUDA code:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <vector>
+
+class BatchedMatMulKernel {
+public:
+    __global__ void forward(const float* A, const float* B, float* C, int batch_size, int m, int k, int n) {
+        int i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i < m) {
+            for (int j = 0; j < n; j++) {
+                float sum = 0.0f;
+                for (int l = 0; l < k; l++) {
+                    sum += A[i * k + l] * B[j * k + l];
+                }
+                C[i * n + j] = sum;
+            }
+        }
+    }
+};
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto batch_size = A.size(0);
+    auto m = A.size(1);
+    auto k = A.size(2);
+    auto n = B.size(2);
+    
+    if (A.size(1) != B.size(1)) {
+        throw std::invalid_argument("Matrix sizes are incompatible for multiplication.");
+    }
+    
+    int num_elements = batch_size * m * n;
+    float* dA = A.data_ptr();
+    float* dB = B.data_ptr();
+    float* dC = C.data_ptr();
+    
+    int m_tpb = 256;
+    int num_blocks = m / m_tpb + (m % m_tpb != 0 ? 1 : 0);
+    
+    BatchedMatMulKernel::forward(dA, dB, dC, batch_size, m, k, n);
+    
+    return std::make_tuple(dC, dC + num_elements);
+}
+"""
+
+ cpp_source = (
+    "class BatchedMatMulKernel : public torch:: extensions:: EngagementBase {};\n\ntorch::Tensor forward(torch::Tensor A, torch::Tensor B) {\n    auto batch_size = A.size(0);\n    auto m = A.size(1);\n    auto k = A.size

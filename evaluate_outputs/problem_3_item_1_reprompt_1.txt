@@ -1,0 +1,100 @@
+The custom_matmulKernel function uses a single block size, but it could be improved by using the block_size from the grid dimensions, possibly allowing for more optimal thread assignment.
+
+Additionally, using shared memory could lead to performance gains by reducing global memory latency. However, since this is a single-operator kernel, it's possible that the overhead of shared memory usage may not justify its use in this context.
+
+Another optimization that can be done is using the cuBLAS library which implements the underlying matrix multiplication in an highly optimized way. However, implementing cuBLAS from scratch would be beyond the scope of this exercise.
+
+Here's the corrected and improved code with these considerations:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cublas.h>
+
+__global__ void custom_matmulKernel(const float* d_A, const float* d_B, float* d_C, int M, int N) {
+    int i = blockIdx.x;
+    int j = blockIdx.y;
+    int k = threadIdx.x;
+
+    float sum = 0.0f;
+    for (int n = 0; n < N; ++n) {
+        sum += d_A[i * N + n] * d_B[j * N + n];
+    }
+    d_C[i * N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+
+    if (M == 0 || N == 0) {
+        return B.zero_();
+    }
+
+    auto max_threads_per_block = 256;
+    auto blocks_per_row = (M + max_threads_per_block - 1) / max_threads_per_block;
+    auto blocks_per_col = (N + max_threads_per_block - 1) / max_threads_per_block;
+
+    custom_matmulKernel<<<blocks_per_row, blocks_per_col>>>(A.data_ptr<float>(), B.data_ptr<float>(), B.data_ptr<float>(), M, N);
+
+    return B;
+}
+"""
+
+ cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+
+    if (M == 0 || N == 0) {
+        return B.zero_();
+    }
+
+    custom_matmulKernel<<<blocks_per_row, blocks_per_col>>>(A.data_ptr<float>(), B.data_ptr<float>(), B.data_ptr<float>(), M, N);
+
+    return B;
+}
+"""
+
+Wait, I'm using blocks_per_row and blocks_per_col inside the forward method, but they are calculated using M and N which are the size of A and B. However, in a CUDA kernel, these values must be known at compile time. So, I need to calculate the blocks_per_row and blocks_per_col before the kernel is launched, not inside the kernel itself.
+
+Thus, I need to modify the code to calculate the blocks per row and per col outside the kernel. Let me fix that.
+
+Here's the correct CUDA code with these considerations:
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cublas.h>
+
+__global__ void custom_matmulKernel(const float* d_A, const float* d_B, float* d_C, int M, int N) {
+    int i = blockIdx.x;
+    int j = blockIdx.y;
+    int k = threadIdx.x;
+
+    float sum = 0.0f;
+    for (int n = 0; n < N; ++n) {
+        sum += d_A[i * N + n] * d_B[j * N + n];
+    }
+    d_C[i * N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto K = A.size(1);
+    auto N = B.size(1);
+
+    if (M == 0 || N == 0) {
+        return B.zero_();
+    }
+
+    int blocks_per_row = (M + 255) / 256;
+    int blocks_per_col = (N + 255) / 256;
+
+    custom_matmulKernel<<<blocks_per_row, 256>>>(A.data_ptr<float>(), B.data_ptr<float>(), B.data_ptr<float>(), M, N);
+    custom_matmulKernel<<<blocks_per_row, 256>>>(A.data_ptr<float>(), B.data_ptr<float>(), B.data_ptr<float>(), M, N);
+}
+
+Wait, no—the blocks_per_row and blocks_per_col should be calculated once outside the kernel, but within the CUDA function, we can't use the CUDA block count variables like blocksPerRow or

@@ -1,0 +1,34 @@
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matvec_mult_kernel(const float* A, const float* B, float* C, int M, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int k = (blockIndex.x << 8) + (blockIndex.y >> 0);
+    if (i < M && k < K) {
+        int idx = i * K + k;
+        C[i] += A[idx] * B[k];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = B.size(0);
+    auto C = torch::zeros(1, M);
+
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+
+    matvec_mult_kernel<<<num_blocks, block_size>>>(A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), M, K);
+
+    return C;
+}
+"""
+```
+
+```cpp
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+```

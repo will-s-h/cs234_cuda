@@ -1,0 +1,45 @@
+Okay, I'll reformat the CUDA source correctly to match the examples.
+
+The final code is as follows:
+</think>
+
+Here is the correctly formatted CUDA source code with the matmul and relu fused into a single kernel:
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_fused_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < M * N) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            sum += A[i * K + k] * B[k * N];
+        }
+        C[i] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto *A_ptr = A.data_ptr();
+    auto *B_ptr = B.data_ptr();
+    auto *C_ptr = torch::empty_float32(M, N).data_ptr();
+    
+    const int block_size = 256;
+    const int num_blocks = (M * N + block_size - 1) / block_size;
+    
+    matmul_fused_kernel<<<num_blocks, block_size>>>(A_ptr, B_ptr, C_ptr, M, K, N);
+    
+    return torch::empty_float32(M, N);
+}
+```
+
+And here is the corresponding C++ binding:
+
+```cpp_source
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+```

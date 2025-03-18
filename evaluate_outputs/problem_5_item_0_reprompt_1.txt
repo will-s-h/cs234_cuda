@@ -1,0 +1,57 @@
+Alright, I'll need to fix the formatting of the CUDA source code. Let me ensure that the code is properly formatted and adheres to the structure shown in the examples.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < M || j < N) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            sum += A[i * K + k] * B[k * N + j];
+        }
+        C[i * N + j] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto pitchA = A pitches(0);
+    auto pitchB = B pitches(1);
+    auto pitchC = std::numeric_limits<std::size_t>::min();
+
+    const int block_size = 256;
+    const int num_threads_per_block = block_size;
+    const int num_blocks_per_grid_M = (M + num_threads_per_block - 1) / num_threads_per_block;
+    const int num_blocks_per_grid_K = (K + num_threads_per_block - 1) / num_threads_per_block;
+    const int num_blocks_per_grid_N = (N + num_threads_per_block - 1) / num_threads_per_block;
+
+    matmul_kernel<<<num_blocks_per_grid_M, num_threads_per_block>>>(A.data ptr(), B.data ptr(), C.data ptr(), M, N, K);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    int threadsPerBlock = 256;
+    int blocksPerGridM = (M + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridK = (K + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGridN = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul_kernel<<<blocksPerGridM, blocksPerGridK, blocksPerGridN, threadsPerBlock>>>(
+        A.data ptr(), B.data ptr(), C.data ptr(), M, N, K);
+    return C;
+}
+"""
+```

@@ -1,0 +1,59 @@
+You might want to look at the first two examples to get a sense of the correct format, but your code needs to be unique and different from them.
+
+Okay, I need to figure out why the previous attempt failed. The error message indicates that Ninja is required to load C++ extensions, which suggests that the build process encountered an issue. Maybe the code wasn't properly optimized for CUDA or had compatibility issues.
+
+Looking back at the previous attempt, the custom kernel used `dimK`, which might not be correctly handled in PyTorch's extension. Let me adjust the kernel to use `dim` instead and make sure all dimensions are correctly indexed. I'll also ensure the shared code is correctly formatted and compatible with the provided architecture.
+
+I'll modify the CUDA source to use `dim` consistently and adjust the indexing in the kernel. Additionally, I'll ensure the PyTorch extension code is correctly aligned with the kernel's expected parameters.
+
+Here's the revised attempt:
+</think>
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void tensorMatmulKernel(const float* __global__ A, 
+                                    const float* __global__ B, 
+                                    float* __global__ C, 
+                                    int N, 
+                                    int M, 
+                                    int L) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        int j = blockDim.x * i + threadIdx.x;
+        if (j < M) {
+            float sum = 0.0f;
+            for (int k = 0; k < K; k++) {
+                sum += A[i*M + j*K + k] * B[i*K + k*L + k];
+            }
+            C[i*M + j*L] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int dimN = A.size(0);
+    int dimM = A.size(1);
+    int dimK = A.size(2);
+    int dimL = B.size(1);
+    
+    int size = dimN * dimM * dimL;
+    
+    const float* a = A.data_ptr<float>();
+    const float* b = B.data_ptr<float>();
+    float* c = torch::empty_float32(size, dimL).data_ptr();
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    tensorMatmulKernel<<<num_blocks, block_size>>>(
+        a, b, c, dimN, dimM, dimL);
+
+    return torch::empty_float32(dimN, dimM, dimL).to(A);
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)

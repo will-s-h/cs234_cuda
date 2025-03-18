@@ -1,0 +1,67 @@
+
+
+To optimize the matrix multiplication operation using CUDA, we'll implement a custom kernel that efficiently handles irregular matrix shapes. This approach minimizes data transfers and leverages shared memory for better performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <sharedmem.h> // For shared memory usage
+
+__global__ void matmul_kernel(const float* d_A, 
+                             const float* d_B, 
+                             float* d_C, 
+                             int M, int K, int N) {
+    int i = blockIdx row; // Block row index
+    int j = blockIdx col; // Block column index
+    int k = threadIdx.x;  // Thread index within the block
+
+    // Shared memory for block row of A and block column of B
+    float a BLOCK_DEV[K] __shared__;
+    float b BLOCK_DEV[K] __shared__;
+
+    // Load elements of A and B into shared memory
+    a[k] = d_A[i * K + k];
+    b[k] = d_B[k * N + j];
+
+    float c = 0.0f;
+    // Compute the dot product for each element of C
+    for (int tile = 0; tile < K; tile += BLOCK_SIZE) {
+        a[tile] = d_A[i * K + tile];
+        b[tile] = d_B[k * N + j + tile];
+        c += a[tile] * b[tile];
+    }
+
+    d_C[i * N + j] = c;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    // Check if the tensors are on the GPU and have float type
+    if (!A.is_cuda || !B.is_cuda || A.type() != torch::kFloat || B.type() != torch::kFloat) {
+        return torch::zeros(M, N, K, K); // Placeholder for error case
+    }
+
+    // Allocate space on the device for the result
+    torch::Tensor C = torch::zeros(M, N, K, K, device: A.device(), dtype: A.dtype());
+
+    // Calculate the number of blocks and threads per block
+    int blocksPerRow = (M + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int blocksPerCol = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    // Launch the custom CUDA kernel
+    matmul_kernel<<<blocksPerRow, blocksPerCol, BLOCK_SIZE>>>(A.data_ptr(), 
+                                                             B.data_ptr(), 
+                                                             C.data_ptr(), 
+                                                             M, K, N);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

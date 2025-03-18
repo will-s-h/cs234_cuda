@@ -1,0 +1,75 @@
+Here's the updated torch architecture for optimization:
+
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Simple model that performs a single matrix multiplication (C = A * B)
+    with large K dimension
+    """
+    def __init__(self):
+        super(Model, self).__init__()
+
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        """
+        Performs matrix multiplication of A and B.
+        Args:
+            A: Input tensor of shape (M, K)
+            B: Input tensor of shape (K, N)
+        Returns:
+            Output tensor of shape (M, N)
+        """
+        return torch.matmul(A, B)
+
+M = 256
+N = 256
+K = 131072
+
+def get_inputs():
+    A = torch.randn(M, K)
+    B = torch.randn(K, N)
+    return [A, B]
+
+def get_init_inputs():
+    return []  # No special initialization inputs needed
+</think>
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_mult_kernel(const float* A, const float* B, float* C,
+                                   int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+    
+    for (int k = 0; k < K; k++) {
+        sum += A[row * K + k] * B[k * N + col];
+    }
+    C[col * M + row] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+    int size = M * N;
+    
+    auto out = torch::empty(M, N, {M, N}, A.kinds(), {A.stride(0), A.stride(1), B.stride(0), B.stride(1)});
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matrix_mult_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), out.data_ptr(), M, N, K);
+
+    return out;
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

@@ -1,0 +1,47 @@
+Please note that the user will only give the model class, so only the code that should be generated from that model is shown here.
+
+Additionally, the example code uses float precision, but your code can use any precision (e.g., double, or even bfloat16, float16) as long as the example can be ported accordingly.
+
+Okay, so I need to generate the correct CUDA source and C++ source code based on the example format.
+
+First, the CUDA source must be a single string containing the full CUDA kernel code, placed inside a __global__ function named 'forward'. It should include the necessary CUDA headers and have appropriate device functions and inline kernels.
+
+The cpp_source should be a single string defining a Torch extension's cpp implementation. It should include the function signature and any necessary type casts or checks. I need to ensure that it only matches the example's format, including using 'torch::Tensor' and only including the forward method.
+
+I should also ensure that the code compiles correctly, using the correct compiler flags (e.g., '-DUSE_GPU').
+
+After fixing the formatting issue, the generated CUDA and cpp sources should match the structure of the examples provided by the user, including using the correct function names and structure.
+</think>
+
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void forward(const float* A, const float* B, float* C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    float Celement = 0;
+    for (int k = 0; k < N; ++k) {
+        Celement += A[row * N + k] * B[k * N + col];
+    }
+    C[col * N + row] = Celement;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    if (N != B.size(0) || N != B.size(1)) {
+        throw std::invalid_argument("Matrix dimensions must match for multiplication");
+    }
+    int size = N * N;
+    const float* d_A = A.data_ptr();
+    const float* d_B = B.data_ptr();
+    float* d_C = new float[size];
+    
+    forward<<<1, N>>>(d_A, d_B, d_C, N);
+    
+    return torch::from_blob(d_C, torch::kChannelsLast, {1, N, N});
+}
+"""

@@ -1,0 +1,71 @@
+
+
+To optimize the matrix multiplication operation using CUDA, we'll implement a custom kernel that efficiently performs the multiplication on the GPU. Since one of the matrices is tall and skinny, we'll exploit the GPU's parallelism by processing each row of matrix A against the entire matrix B.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_tall skinny Kernel(const float* A, const float* B, float* C, int rows, int cols, int n) {
+    int tx = threadIdx.x;
+    int tx2 = (int)((blockThreadSize + 1) / 2);
+    int by = (int)(blockIndex.y) << (int)lg2(n);
+    int bx = (int)(blockIndex.x) & (int)(blockSize.x - 1);
+    int txOffset = tx * n + tx2;
+    int byOffset = by * n;
+    int i = byOffset + txOffset;
+
+    if (i < rows * cols) {
+        float *rowA = A + i * n;
+        float *colB = B + (blockIndex.x) * n;
+        float sum = 0.0f;
+        for (int k = 0; k < n; k++) {
+            sum += rowA[k] * colB[k];
+        }
+        C[i * n + tx2] = sum;
+        if (tx2 + tx < n) {
+            C[i * n + tx2 + 1] = sum;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+
+    if (M < 512 || N < 512 || K < 512) {
+        return torch::matmul(A, B);
+    }
+
+    auto src = (A.data_ptr<float>() < B.data_ptr<float>()) ? A.data_ptr<float() : B.data_ptr<float>()};
+    auto size = M * N;
+    auto devC = torch::empty "<<1,512>>(size).cuda";
+
+    int numC = (int)(M / 512) + (M % 512 != 0);
+    int numB = (int)(N / 512) + (N % 512 != 0);
+
+    matmul_tall skinny<<<numC, numB>>>(src, B.data_ptr<float>(), devC.data_ptr<float>(), M, N, K);
+
+    int offsetC = 0;
+    for (int i = 0; i < numC; i++) {
+        int startRow = i * 512;
+        auto localC = devC.subview/startRow..(startRow + 512)/;
+        auto localA = A.subview/startRow*512..<startRow*512 + K*512/;
+
+        auto dsize = localC.data_ptr<float>() - localA.data_ptr<float>();
+        cuKernel<<<1, 512>>>(dsize, localA.data_ptr<float>(), localC.data_ptr<float>());
+        offsetC += 512;
+    }
+
+    torch::Tensor C = torch::empty<<"1,1>>(M, N).cuda";
+    C.copyFromSubview(devC, 0, M, N);
+
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

@@ -1,0 +1,1 @@
+The outputted CUDA kernel was not formatted correctly. Please follow the format of the examples given!

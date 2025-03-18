@@ -1,0 +1,47 @@
+Here's another example to show you the syntax of the architecture you could see implemented in torch. The example below is for scale dot product attention:
+
+```
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Simple model that performs scaled dot product attention with multi-head attention.
+    """
+    def __init__(self):
+        super(Model, self).__init__()
+        self.num_heads = 8
+        self.head_size = 64
+        self.query = nn.Linear(512, self.head_size)
+        self.key = nn.Linear(512, self.head_size)
+        self.value = nn.Linear(512, self.head_size)
+        self.out = nn.Linear(self.head_size, 512)
+
+    def forward(self, x):
+        """
+        Applies attention mechanism to the input tensor.
+
+        Args:
+            x: Input tensor with shape (batch_size, seq_len, input_dim).
+
+        Returns:
+            output: Output tensor with shape (batch_size, seq_len, output_dim).
+        """
+        return self.out(self.__attention(x))
+
+class _Attention(nn.Module):
+    def forward(self, query, key, value):
+        """
+        Applies scaled dot product attention.
+
+        Args:
+            query: Query tensor with shape (batch_size, seq_len, head_size).
+            key: Key tensor with shape (batch_size, seq_len, head_size).
+            value: Value tensor with shape (batch_size, seq_len, head_size).
+
+        Returns:
+            output: Output tensor with shape (batch_size, seq_len, head_size).
+        """
+        return query.mmmul(key.transpose(-1, -2)) * (self.head_size ** -0.5)
+"""
+```

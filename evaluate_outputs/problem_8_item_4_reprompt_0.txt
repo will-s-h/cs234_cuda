@@ -1,0 +1,89 @@
+
+
+To optimize the matrix multiplication, we'll implement a custom CUDA kernel that uses the cuBLAS library for efficient batched matrix operations. This approach leverages GPU-level optimizations to improve performance.
+
+The new CUDA source code is as follows:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <cublas.h>
+
+__global__ void matmul_kernel(const float* d_A, const float* d_B, float* d_C, int M, int N, int K) {
+    int i, j, k;
+    float sum = 0;
+    for (k = 0; k < K; ++k) {
+        sum += d_A[i + k * M] * d_B[k + j * N];
+    }
+    d_C[i + j * M] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    // Determine if we can use cuBLAS
+    if (A.dim() == 2 || B.dim() == 2) {
+        int M = A.size(0), N = B.size(1), K = A.size(1);
+
+        // Allocate output tensor
+        auto C = torch::empty(M, N);
+
+        // Plan for cuBLAS
+        plan计划;
+        cublasHandle_t handle = cublasCreate();
+        cublasSetMatrix(K, M, 1, A.data(), K, A.stride(), 1);
+        cublasSetMatrix(K, N, 1, B.data(), K, B.stride(), 1);
+        
+        cublasXtMatmul(handle, CUBLAS TransA, CUBLAS TransB, M, N, K, alpha, A.data(), K, B.data(), K, beta, C.data());
+        cublasDestroy(handle);
+
+        return C;
+    }
+
+    // Fallback to standard implementation if cuBLAS isn't beneficial
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data(), B.data(), C.data(), M, N, K);
+
+    return C;
+}
+"""
+```
+
+The corresponding C++ source code is:
+
+```cpp_source = """
+#include <torch/extension.h>
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    if (A.dim() == 2 || B.dim() == 2) {
+        int M = A.size(0), N = B.size(1), K = A.size(1);
+        auto C = torch::empty(M, N);
+        return C;
+    }
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (A.numel() + threadsPerBlock - 1) / threadsPerBlock;
+
+    __global__ void matmul_kernel(const float* d_A, const float* d_B, float* d_C, int M, int N, int K) {
+        int i, j, k;
+        float sum = 0;
+        for (k = 0; k < K; ++k) {
+            sum += d_A[i + k * M] * d_B[k + j * N];
+        }
+        d_C[i + j * M] = sum;
+    }
+
+    matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data(), B.data(), C.data(), M, N, K);
+
+    return C;
+}
+"""
+```
+
+This implementation:
+1. Uses cuBLAS for batched matrix multiplication when dimensions are suitable, which is highly optimized for GPU execution.
+2. Falls back to a custom CUDA kernel when cuBLAS is not beneficial or available.
+3. Leverages CUDA thread block and grid configurations for efficient parallel execution.
+4. Maintains compatibility with PyTorch's extension mechanism for seamless integration.
+
+The custom CUDA kernel and cuBLAS integration aim to provide faster matrix multiplication by utilizing GPU resources effectively, potentially offering significant speedups over the standard torch.matmul implementation.

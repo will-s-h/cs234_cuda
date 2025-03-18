@@ -1,0 +1,44 @@
+Please ensure that the code only includes the CUDA kernel and forward function as per the example, without any additional comments or text.
+</think>
+
+ cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* A, const float* B, float* C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float Cvalue = 0;
+    for (int k = 0; k < N; ++k) {
+        Cvalue += A[row * N + k] * B[k * N + col];
+    }
+    C[col * N + row] = Cvalue;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    auto C = torch::empty_float(N, N, .noStride());
+
+    int blocksPerRow = 256;
+    int blocksPerGrid = (N + blocksPerRow - 1) / blocksPerRow;
+
+    matmulKernel<<<blocksPerGrid, blocksPerRow>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), N);
+
+    return C;
+}
+"""
+
+ cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    auto C = torch::empty_float(N, N, .noStride());
+
+    int blocksPerRow = 256;
+    int blocksPerGrid = (N + blocksPerRow - 1) / blocksPerRow;
+
+    matmulKernel<<<blocksPerGrid, blocksPerRow>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), N);
+
+    return C;
+}
+"""

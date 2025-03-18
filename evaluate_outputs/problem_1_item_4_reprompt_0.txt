@@ -1,0 +1,45 @@
+
+
+To optimize the matrix multiplication model with a custom CUDA kernel, we fuse the matrix multiplication into a single kernel for efficiency. Here's the CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int K, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    float sum = 0.0f;
+    for (int k = 0; k < K; k++) {
+        sum += A[i*K + k] * B[k*N + j];
+    }
+    C[i*N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto size = M * N;
+    auto C = torch::zeros(M, N, K, N ? K : 1, K : 1);
+    
+    const int block_size = 256;
+    const int num_blocks_M = M / block_size + (M % block_size != 0);
+    const int num_blocks_M_T = N / block_size + (N % block_size != 0);
+    
+    matmul_kernel<<<num_blocks_M, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K, N);
+    
+    return C;
+}
+"""
+```
+
+The custom CUDA implementation fuses the matrix multiplication into a single kernel for better performance. This eliminates the overhead of calling a Python-defined operator, enabling more efficient computation on CUDA-enabled devices.
+
+The `cpp_source` remains the same as specified in the problem:
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

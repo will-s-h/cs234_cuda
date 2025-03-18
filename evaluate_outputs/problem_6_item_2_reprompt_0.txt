@@ -1,0 +1,49 @@
+
+
+To optimize the matrix multiplication operation using CUDA, we'll implement a custom kernel that efficiently performs the multiplication using shared memory and constant memory for better performance.
+
+Here's the CUDA implementation:
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <|"M = 16384, N = 16384, K = 32">|
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    float Cij = 0;
+    for (int k = 0; k < K; ++k) {
+        Cij += A[i*K + k] * B[k*N + j];
+    }
+    C[i*N + j] = Cij;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = A.size(1);
+    
+    if (K != B.size(0)) {
+        throw invalidArgumentValueException("Matrix multiplication dimension mismatch");
+    }
+    
+    auto size = M * N;
+    auto C = torch::zeros(M, N, sizeof(float),Placement::ROW_MAJOR);
+    
+    auto threadsPerBlock = 256;
+    auto blocksPerGrid = (M + threadsPerBlock - 1) / threadsPerBlock;
+    auto sharedMemSize = 2 * threadsPerBlock;
+    __shared__ float blockA[sharedMemSize];
+    __shared__ float blockB[sharedMemSize];
+    
+    matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), M, N, K);
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

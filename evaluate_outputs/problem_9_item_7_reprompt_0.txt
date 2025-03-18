@@ -1,0 +1,91 @@
+
+
+To optimize the 3D tensor-matrix multiplication using CUDA, we'll create a custom CUDA kernel that efficiently performs the operation using block-level shared memory for better performance.
+
+Here's the CUDA implementation:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul3d_kernel(const float* __global__ A_data, 
+                                const float* __global__ B_data, 
+                                float* __global__ C_data, 
+                                int N, int M, int K, int L) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tz = threadIdx.z;
+    
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int bz = blockIdx.z;
+
+    float C element = 0.0f;
+    for (int k = 0; k < K; k++) {
+        __shared__ float A_ThreadBlock[3][3] = {{A_data[bx * M * K + by * K + bz * K + k * M + ty], 
+                                              A_data[bx * M * K + by * K + bz * K + (k+1)*M + ty], 
+                                              A_data[bx * M * K + by * K + bz * K + (k+2)*M + ty}}};
+        for (int m = 0; m < M; m++) {
+            if (m + 3 >= M) break;
+            __shared__ float B_ThreadBlock[3] = {{B_data[tx + m*L + tz], B_data[ty + m*L + tz], B_data[tz + m*L + tz]}}; 
+            for (int k = 0; k < 3; k++) {
+                if (k + 3 >= K) break;
+                C element += A_ThreadBlock[k][m] * B_ThreadBlock[k];
+            }
+        }
+    }
+    if (ty < M && tz < L) {
+        C_data[ty * L + tz] += C element;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    if (A.dim() != 3 || B.dim() != 2 || A.size(2) != B.size(0)) {
+        throw std::invalid_argument("Invalid input dimensions");
+    }
+
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    // Allocate CUDA memory on the device
+    float* A_ptr = (float*) A.data_ptr();
+    float* B_ptr = (float*) B.data_ptr();
+    float* C_ptr = (float*) torch::empty(C.dimSize(0), C.dimSize(1), L).data_ptr();
+
+    int block_size = 3;  // Tune this for performance
+    int num_blocks_per_grid = (N + block_size - 1) / block_size;
+
+    matmul3d_kernel<<<num_blocks_per_grid, block_size>>>(A_ptr, B_ptr, C_ptr, N, M, K, L);
+
+    return torch::empty(N, L).to CPU();
+}
+"""
+```
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    if (A.dim() != 3 || B.dim() != 2 || A.size(2) != B.size(0)) {
+        throw std::invalid_argument("Invalid input dimensions");
+    }
+
+    // Allocate CUDA memory on the device
+    size_t N = A.size(0);
+    size_t M = A.size(1);
+    size_t K = A.size(2);
+    size_t L = B.size(1);
+
+    float* A_ptr = (float*) A.data_ptr();
+    float* B_ptr = (float*) B.data_ptr();
+    float* C_ptr = (float*) torch::empty(N, L).data_ptr();
+
+    int block_size = 3;
+    int num_blocks_per_grid = (N + block_size - 1) / block_size;
+
+    matmul3d_kernel<<<num_blocks_per_grid, block_size>>>(A_ptr, B_ptr, C_ptr, N, M, K, L);
+
+    return torch::empty(N, L).to CPU();
+}
+"""
+```

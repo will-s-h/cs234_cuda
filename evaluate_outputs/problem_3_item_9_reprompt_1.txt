@@ -1,0 +1,48 @@
+Alright, I'll try again. The previous attempt resulted in an error because the CUDA code wasn't properly formatted. Let me make sure to follow the correct structure this time.
+
+First, I'll write the CUDA kernel source code. It should be a single string with proper indentation using backticks. I'll make sure to include placeholders for the input pointers, output pointer, and size.
+
+Then, for the cpp_source, I'll replicate the structure from the examples, only including the forward method's signature and docstring without any extra content.
+
+I'll ensure that both CUDA and cpp sources adhere strictly to the format shown in the examples provided.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matvec_mult_kernel(const float* dA, const float* dB, float* dC, int m, int k) {
+    int block_idx = blockIdx.threads_x;
+    int tx = threadIdx.x;
+    
+    float tmp = 0;
+    for (int x = 0; x < k; x++) {
+        tmp += dA[block_idx * k + x] * dB[x];
+    }
+    dC[block_idx] = tmp;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    if (K != B.size(0)) {
+        return torch::tensor();
+    }
+    
+    auto dA = A.data_ptr();
+    auto dB = B.data_ptr();
+    auto dC = torch::Tensor(dC, dC.size() + 1).data_ptr();
+    
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+    
+    matvec_mult_kernel<<<num_blocks, block_size>>>(dA, dB, dC, M, K);
+    return dC;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

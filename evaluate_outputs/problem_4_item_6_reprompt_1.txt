@@ -1,0 +1,28 @@
+The previous attempt used a different approach than suggested. Please follow the instructions strictly this time.
+</think>
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void forward_Kernel(const float* A, const float* b, float* y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < A->numel()) {
+        y[i] = A->data[i] * b[0];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor b) {
+    auto size = A.numel();
+    auto y = torch::zeros_like(A);
+    auto threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    forward_Kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), b.data_ptr(), y.data_ptr());
+    return y;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor b);"
+)
+```

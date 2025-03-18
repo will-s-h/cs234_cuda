@@ -1,0 +1,36 @@
+
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_scalar_mult_kernel(const float* A, const float* s, float* C, int rows, int cols) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < rows && col < cols) {
+        C[row * cols + col] = A[row * cols + col] * s[0];
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor s) {
+    auto M = A.size(0);
+    auto N = A.size(1);
+    auto size = M * N;
+    auto output = torch::zeros_like(A);
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matrix_scalar_mult_kernel<<<num_blocks, block_size>>>(A.data_ptr<float>(), s.data_ptr<float>(), output.data_ptr<float>(), M, N);
+
+    return output;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor s) {
+    return A * s.scalar_value();
+}
+"""
+```

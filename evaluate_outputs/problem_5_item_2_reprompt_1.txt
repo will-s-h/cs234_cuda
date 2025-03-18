@@ -1,0 +1,59 @@
+Alright, I need to provide a correctly formatted CUDA source and C++ source code based on the user's instructions. However, I noticed that my previous attempt had an issue with formatting. Let me try again.
+
+The user's examples show that the CUDA source includes the kernel function and the forward method. The C++ source is just the method declaration.
+
+I'll structure the CUDA source with proper formatting for the kernel and the forward function. The kernel should be in .cur CUDA source, and the forward function in .cpp source.
+
+Here's the corrected CUDA code:
+
+```cuda_source
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared_buffer.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Load row i of A into shared buffer
+    for (int k = 0; k < K; k += 16) {
+        shared buffer[blockRow * 16 + k] = A[blockRow * K + k];
+    }
+
+    // Load column j of B into shared buffer
+    shared buffer[blockCol * 16 + j] = B[blockCol * K + j];
+    __syncthreads();
+
+    // Multiply and accumulate the elements in shared buffer
+    for (int n = 0; n < 16; ++n) {
+        if (n < K / 16) {
+            float temp = buffer[0];
+            for (int l = 0; l < 16; ++l) {
+                temp *= buffer[l + n];
+            }
+            C[blockRow * N + blockCol] = temp;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0), N = B.size(1), K = A.size(1);
+    auto size = M * N;
+    auto C = torch::zeros(M, N);
+
+    int block_size = 256;
+    int num_blocks = (M + block_size - 1) / block_size;
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+```
+
+And the corresponding C++ source code remains the same:
+
+```cpp_source
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+```
+
+I apologize for the formatting issues in my previous attempt. This response follows the required structure and includes the correct CUDA source and C++ source as specified.

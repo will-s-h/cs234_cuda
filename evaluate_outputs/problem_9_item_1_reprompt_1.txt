@@ -1,0 +1,109 @@
+Here's the model architecture again for reference:
+
+```
+import torch
+import torch.nn as nn
+
+class Model(nn.Module):
+    """
+    Performs 3D tensor-matrix multiplication.
+    """
+    def __init__(self):
+        super(Model, self).__init__()
+
+    def forward(self, A, B):
+        """
+        Performs 3D tensor-matrix multiplication.
+
+        Args:
+            A (torch.Tensor): Input 3D tensor of shape (N, M, K).
+            B (torch.Tensor): Input matrix of shape (K, L).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (N, M, L), resulting from the multiplication of A and B along the last dimension of A.
+        """
+        return torch.matmul(A, B)
+
+N = 16
+M = 1024
+K = 2048
+L = 768
+
+def get_inputs():
+    A = torch.randn(N, M, K)
+    B = torch.randn(K, L)
+    return [A, B]
+
+def get_init_inputs():
+    return []  # No special initialization inputs needed
+```
+
+Please optimize the torch architecture named Model with CUDA operators!
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void tensor_matrix_mult(const float* A, const float* B, float* out, int N, int M, int K, int L) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tz = threadIdx.z;
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int bz = blockIdx.z;
+
+    float acc = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        if (tx < N && ty < M) {
+            if (k == 0 || ((k-1)/K) + (ty < M) ? ((k-1)/K == (ty)) : 0) {
+                const float a_val = A[ty * M * K + tx * K + k];
+                const float b_val = B[k * L + (bz < L) ? ((k-1)/L == (bz)) : 0];
+                if (a_val != 0.0f && b_val != 0.0f) {
+                    acc += a_val * b_val;
+                }
+            }
+        }
+        if (tz < L) {
+            out[tz * N * M + tx * M + ty] = acc;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    int size = N * M * L;
+    auto plan = get_plan_for flop_size(0);
+    const int warpsPerBlock = 8;
+    const int numBlocks = (size + warpsPerBlock - 1) / warpsPerBlock;
+
+    tensor_matrix_mult<<<numBlocks>>>(A.data_ptr(), B.data_ptr(), nullptr, N, M, K, L);
+
+    return torch::emptyTensor();
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int N = A.size(0);
+    int M = A.size(1);
+    int K = A.size(2);
+    int L = B.size(1);
+
+    auto size = N * M * L;
+    auto output = torch::zeros_like(A);
+
+    int threadsPerBlock = 8;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    tensor_matrix_mult<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), output.data_ptr(), N, M, K, L);
+
+    return output;
+}
+"""
+```

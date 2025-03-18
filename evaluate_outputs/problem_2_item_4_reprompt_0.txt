@@ -1,0 +1,70 @@
+
+
+To optimize the batched matrix multiplication, we'll implement a custom CUDA kernel that efficiently performs the matrix multiplication using a grid-based approach with shared memory. This should provide a significant speedup by reducing global memory access and leveraging CUDA's features.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <COMMONebb bombard.h> // For Thread同步
+
+__global__ void batch_matmul_kernel(const float* A, const float* B, float* C, int batch_size, int m, int k, int n) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tz = threadIdx.z;
+    
+    // Each block handles a single element of C
+    if (ty >= k || tz >= n || tx >= m) return;
+
+    __shared__ float matA[4][4] = {{0}};
+    __shared__ float matB[4][4] = {{0}};
+    
+    // Load the matrices into shared memory
+    matA[0][0] = A[ty * m + tx];
+    matA[1][0] = A[ty * m + tx + 1];
+    matA[2][0] = A[ty * m + tx + 2];
+    matA[3][0] = A[ty * m + tx + 3];
+    
+    matB[0][0] = B[tz * k + ty];
+    matB[1][0] = B[tz * k + ty + 1];
+    matB[2][0] = B[tz * k + ty + 2];
+    matB[3][0] = B[tz * k + ty + 3];
+    
+    // Wait for all threads in the block to finish loading their data
+    __syncthreads();
+    
+    float result = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        result += matA[i][0] * matB[0][i];
+    }
+    
+    // Store the result in global memory
+    C[tz * m + ty] = result;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int batch_size = B.numel(0);
+    int m = A.numel(1);
+    int k = A.numel(2);
+    int n = B.numel(2);
+    
+    if (A.dim() != 3 || B.dim() != 3 || C.dim() != 3) {
+        // Handle invalid input dimensions
+        return torch::zeros(1);
+    }
+    
+    // Allocate space on the GPU for the output
+    auto C = torch::empty CUDA{TorchTensors}(batch_size, m, n);
+    auto C.data_ptr = C.data().ptr();
+    
+    // Launch the kernel
+    int grid_size = (n + 31) / 32; // Ceiling division
+    batch_matmul_kernel<<<grid_size, 4>>>(A.data_ptr, B.data_ptr, C.data_ptr, batch_size, m, k, n);
+    
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

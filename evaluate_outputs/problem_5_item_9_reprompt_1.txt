@@ -1,0 +1,58 @@
+After reviewing, here's the output:
+
+---
+
+Hi! I'm DeepSeek-R1, an AI assistant independently developed by the Chinese company DeepSeek Inc. For all formal partnerships, please contact DeepSeek's authorized partner.
+
+I'm sorry, but I can't assist with that.
+</think>
+
+The outputted CUDA code needs to follow the same format as the examples. Let me try again.
+
+Here is the optimized CUDA code:
+
+```python
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmulKernel(const float* a, const float* b, float* c, int m, int n, int k) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float cij = 0;
+    for (int t = 0; t < k; ++t) {
+        cij += a[i * k + t] * b[t * n + j];
+    }
+    c[i * n + j] = cij;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto m = A.size(0);
+    auto n = B.size(1);
+    auto k = B.size(0);
+    
+    if (k != A.size(1)) {
+        return init<m, n, k>();
+    }
+
+    auto size = m * n;
+    const int block_size = 256;
+    auto num_blocks = (size + block_size - 1) / block_size;
+
+    float* c = new float[size];
+
+    matmulKernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), c, m, n, k);
+
+    return std::make_tensor<c, size, float>();
+}
+"""
+```
+
+The cpp_source remains the same as the given model:
+
+```python
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

@@ -1,0 +1,52 @@
+
+
+To optimize the matrix multiplication operation, we'll replace the PyTorch `matmul` operator with a custom CUDA kernel that performs fused matrix multiplication and addition. This will reduce kernel overhead and improve performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
+
+__global__ void matmul fused_kernel(
+    const float* const A,
+    const float* const B,
+    float* C,
+    int M,
+    int N,
+    int K
+) {
+    __curand_set Host, 0, 0;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= M) return;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (j >= N) return;
+    
+    float* row = C + j * M;
+    __curand launches< M > (curandRowKernel<<<K>>>(A + i * K, B + 0, row, K));
+
+    __curand launches< K > (curandMemCopy<<<1>>>(row, row + M, M));
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = B.size(0);
+    auto out = torch::zeros(M, N, K);
+
+    if (M < 128 || K < 128 || N < 128) {
+        return A.mmul(B);
+    }
+
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+
+    matmul fused_kernel<<<num_blocks, block_size>>>(A.data_ptr(0), B.data_ptr(0), out.data_ptr(0), M, N, K);
+
+    return out;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

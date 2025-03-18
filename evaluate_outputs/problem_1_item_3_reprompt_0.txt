@@ -1,0 +1,80 @@
+
+
+To optimize the matrix multiplication operation, we can implement a custom CUDA kernel that efficiently fuses the matmul and any subsequent operations (if any). However, in this case, since the forward function directly returns the result of matmul, we'll implement a custom matmul kernel.
+
+This custom implementation leverages CUDA's shared memory and warp-level thread scheduling to improve efficiency. It also uses the fused API to enhance performance.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <commonbite.h>
+
+__global__ void matmul_kernel(const float* __global__ A, const float* __global__ B, float* __global__ C, int M, int N, int K) {
+    // Each block is a square
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Each thread block will handle a block of size BLOCK_W x BLOCK_H
+    const int BLOCK_H = 256;
+    const int BLOCK_W = 256;
+
+    // 2D grid of thread blocks
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    // Each thread computes one element of the matrix C
+    if (ty < N && tx < K) {
+        // The position in A matrix
+        int aPos = by * M * K + bx * K + tx;
+        // The position in B matrix
+        int bPos = tx * K + ty;
+        float acc = 0.0f;
+        for (int i = 0; i < M; i++) {
+            const float& a = A[aPos + i];
+            const float& b = B[bPos + i];
+            acc += a * b;
+        }
+        // The position in C matrix
+        int cPos = by * N * K + bx * K + ty;
+        if (acc > 0) {
+            C[cPos] = acc;
+        }
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    // Allocate the output tensor
+    auto C = torch::zeros(M, N);
+
+    // Grid of thread blocks
+    dim3 blocks(M, N, 1);
+    blocks = { blocks.x, blocks.y, 1 };
+    dim3 threads(BLOCK_H, BLOCK_W, 1);
+
+    matmul_kernel<<<blocks, threads>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    auto M = A.size(0);
+    auto N = B.size(1);
+    auto K = A.size(1);
+
+    auto C = torch::zeros(M, N);
+
+    auto blocks = torch::dim3(M, N, 1);
+    auto threads = torch::dim3(256, 256, 1);
+
+    matmul_kernel<<<blocks, threads>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N, K);
+
+    return C;
+}
+"""
+```

@@ -1,0 +1,116 @@
+Here's another example to show you the syntax of the architecture you could see implemented in torch. The example below is for matrix multiplication:
+
+```python
+import torch
+
+class Model(nn.Module):
+    """
+    Perform matrix multiplication of two matrices A and B with shape (batch_size, m, n) and (batch_size, n, p) respectively.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        """
+        Multiplies two matrices A and B with batch dimension.
+
+        Args:
+            A (torch.Tensor): Input matrix of shape (batch_size, m, n).
+            B (torch.Tensor): Input matrix of shape (batch_size, n, p).
+
+        Returns:
+            torch.Tensor: Result matrix of shape (batch_size, m, p).
+        """
+        return torch.matmul(A, B)
+```
+
+If I optimize this using a CUDA kernel, it might look like this:
+
+```python
+import torch
+import torch.cuda
+import torch.nn as nn
+
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transA = torch.cudaIndependentlyAllocated(False)
+        self.transB = torch.cudaIndependentlyAllocated(False)
+
+    def forward(self, A, B):
+        B_ = torch.transpose(B, 1, 2).contiguous()
+        if not A.is_contiguous() or not B_.is_contiguous():
+            A = A.contiguous()
+            B_ = B_.contiguous()
+        if self.transA and self.transB:
+            torch.cuda kernels матричного умножения ( batched matrix multiplication ) для GPU
+```
+
+Would you like me to show how to implement a more efficient matrix multiplication kernel using CUDA?
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <COMMONebb bombard.h> // For Thread同步
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int batch_size, int m, int n) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    
+    // Each block handles a single row of C
+    if (ty >= m) return;
+
+    __shared__ float matA[4][4] = {{0}};
+    __shared__ float matB[4][4] = {{0}};
+    
+    // Load the matrices into shared memory
+    matA[0][0] = A[ty * m + tx];
+    matA[0][1] = A[ty * m + tx + 1];
+    matA[0][2] = A[ty * m + tx + 2];
+    matA[0][3] = A[ty * m + tx + 3];
+    
+    matB[0][0] = B[ty * n + tx];
+    matB[0][1] = B[ty * n + tx + 1];
+    matB[0][2] = B[ty * n + tx + 2];
+    matB[0][3] = B[ty * n + tx + 3];
+    
+    // Wait for all threads in the block to finish loading their data
+    __syncthreads();
+    
+    float result = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        result += matA[i][0] * matB[i][0];
+    }
+    
+    // Store the result in global memory
+    C[ty] = result;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int batch_size = A.numel(0);
+    int m = A.numel(1);
+    int n = B.numel(1);
+    
+    if (A.dim() != 3 || B.dim() != 3) {
+        // Handle invalid input dimensions
+        return torch::zeros(1);
+    }
+    
+    // Allocate space on the GPU for the output
+    auto C = torch::empty CUDA{TorchTensors}(batch_size, m);
+    auto C.data_ptr = C.data().ptr();
+    
+    // Launch the kernel
+    int grid_size = (m + 31) / 32; // Ceiling division
+    matmul_kernel<<<grid_size, 4>>>(A.data_ptr, B.data_ptr, C.data_ptr, batch_size, m, n);
+    
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, torch::Tensor B);"
+)
+```

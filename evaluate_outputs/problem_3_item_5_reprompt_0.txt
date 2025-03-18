@@ -1,0 +1,47 @@
+
+
+To optimize the matrix-vector multiplication model using CUDA, we fuse the multiplication and addition operations into a single kernel. This reduces kernel launch overhead and improves memory bandwidth efficiency. The kernel processes blocks of data, each handling multiple threads to compute the matrix multiplication in parallel. We ensure proper data alignment and indexing to handle the large input sizes efficiently.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <shared.h>
+
+__global__ void matvec_mult kernel(const float* A, const float* B, float* C, int M, int K) {
+    shared_t<float, 256> shared_B;
+    int row = blockIdx.x;
+    int stride = blockDim.x * sizeof(float);
+    
+    for (int i = 0; i < K; i += stride) {
+        B[i] = shared_B[i];
+    }
+
+    int i = row * K + threadIdx;
+    if (i < M) {
+        float sum = 0.0f;
+        for (int j = 0; j < K; j++) {
+            sum += A[i + j] * B[j];
+        }
+        C[row] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = B.size(0);
+    int size = M;
+    auto C = torch::zeros(1, size);
+
+    const int block_size = 256;
+    const int num_blocks = (M + block_size - 1) / block_size;
+
+    matvec_mult kernel<<<num_blocks, block_size>>>(A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), M, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

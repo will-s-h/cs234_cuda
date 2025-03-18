@@ -1,0 +1,52 @@
+You may use any operator fusion opportunities or algorithmic changes to speed it up, but only as much as fits in this message.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    int i = blockIdx.row;
+    int j = blockIdx.col;
+    int k = gridIndex;
+
+    float Cij = 0;
+    for (int l = 0; l < K; l++) {
+        Cij += A[i*K + l] * B[j*l + K];
+    }
+    if (i < M && j < N) C[i*N + j] = Cij;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+
+    auto C = torch::zeros(M, N);
+
+    const int block_size = 256;
+    const int num_blocks = ((M + block_size - 1) / block_size) * ((N + block_size - 1) / block_size);
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data(), B.data(), C.data(), M, N, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+
+    auto C = torch::zeros(M, N);
+
+    const int block_size = 256;
+    const int num_blocks = ((M + block_size - 1) / block_size) * ((N + block_size - 1) / block_size);
+
+    matmul_kernel<<<num_blocks, block_size>>>(A.data(), B.data(), C.data(), M, N, A.size(1));
+
+    return C;
+}
+"""
+```

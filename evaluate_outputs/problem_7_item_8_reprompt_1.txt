@@ -1,0 +1,85 @@
+Okay, let me analyze the problem. The user provided a PyTorch model that performs a matrix multiplication, and they want to replace the operator with a custom CUDA kernel. The goal is to generate CUDA source code in the specified format.
+
+First, I need to understand the structure of the existing examples. In the first example, the CUDA kernel performs element-wise addition, and the PyTorch model simply adds two tensors. In the second example, the kernel performs a ReLU activation, and the model applies it to a single input tensor.
+
+For the given Model, the forward function takes two tensors A and B and returns their matrix product. The dimensions are irregular: A is (M, K), B is (K, N), resulting in C of shape (M, N).
+
+To implement this with a CUDA kernel, I need to:
+
+1. Write a custom CUDA kernel that performs matrix multiplication.
+2. Ensure that the kernel is properly launched with the correct block and grid sizes.
+3. Handle the memory transfer and kernel execution correctly.
+4. Convert the char* to float* since the underlying computations are in float.
+5. Return the resulting tensor.
+
+I'll structure the CUDA source similarly to the examples. The kernel will be a grid of blocks, each handling a portion of the matrix. The block size will be chosen for efficiency, and I'll use shared memory to reduce global memory access.
+
+In the CUDA source, I'll include the necessary headers, define the kernel function, and write the forward method. The forward method will allocate memory on the device, copy the input tensors, execute the kernel, and then copy the result back to the host.
+
+For the cpp_source, I'll mirror the structure of the CUDA example, ensuring that the method signature and code structure are consistent.
+
+Potential issues to consider:
+- Proper alignment of the memory addresses.
+- Correct calculation of the grid and block dimensions to cover the entire matrix multiplication.
+- Handling empty tensors correctly to avoid segmentation faults.
+- Converting char* to float* properly and ensuring the kernel operates on the correct data.
+- Properly constructing the output tensor with the correct size.
+
+After writing the code, I'll test it to ensure that the matrix multiplication works as expected and that the CUDA kernel is correctly integrated into the PyTorch extension.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+#include <chrono>
+
+__global__ void matmul_kernel(const float* d_A, const float* d_B, float* d_C, int M, int K, int N) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    float C_ij = 0.0f;
+    for (int k = 0; k < K; ++k) {
+        C_ij += d_A[i * K + k] * d_B[k * N + j];
+    }
+    d_C[i * N + j] = C_ij;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num_rows_A = A.size(0);
+    int num_cols_A = A.size(1);
+    int num_cols_B = B.size(1);
+
+    // Allocate output
+    std::vector<int> sizes = {num_rows_A, num_cols_B};
+    int size = 1;
+    for (int dim : sizes) {
+        size *= dim;
+    }
+    char* d_C = (char*)torch::malloc(size * sizeof(char));
+    std::vector<int> C_sizes = {A.numel(), B.numel(), size};
+    int num_blocks = (size / 256 + 1) / 256;
+    matmul_kernel<<<num_blocks, 256>>>(A.data_ptr(), B.data_ptr(), d_C, num_rows_A, num_cols_A, num_cols_B);
+
+    // Convert char* to float* and create output tensor
+    std::vector<int> C_sizes_vec = {static_cast<int64_t>(A.numel()), static_cast<int64_t>(B.numel()), static_cast<int64_t>(size)};
+    torch::Tensor C = torch::empty tensor[C_sizes];
+    return C;
+}
+"""
+
+cpp_source = """
+#include <torch/extension.h>
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int num_rows_A = A.size(0);
+    int num_cols_A = A.size(1);
+    int num_cols_B = B.size(1);
+
+    // Allocate output
+    std::vector<int> sizes = {num_rows_A, num_cols_B};
+    int size = 1;
+    for (int dim : sizes) {
+        size *= dim;
+    }
+    char* d_C = (char*)torch::malloc(size * sizeof(char));
+    std::

@@ -1,0 +1,42 @@
+
+
+To optimize the matrix multiplication operation using CUDA, we can implement a custom kernel that performs the multiplication in blocks. This leverages the GPU's parallel processing capabilities for better performance.
+
+Here's the CUDA implementation:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_kernel(const float* a, const float* b, float* out, int M, int N, int K) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    float sum = 0.0f;
+    
+    for (int k = 0; k < K; ++k) {
+        sum += a[i * K + k] * b[k * N + j];
+    }
+    out[i * N + j] = sum;
+}
+
+torch::Tensor forward(torch::Tensor a, torch::Tensor b) {
+    int M = a.size(0);
+    int N = b.size(1);
+    int K = a.size(1);
+
+    auto output_size = M * N;
+    auto output = torch::zeros(M, N);
+
+    const int threadsPerBlock = 256;
+    const int blocksPerGrid = (output_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    matmul_kernel<<<blocksPerGrid, threadsPerBlock>>>(a.data_ptr(), b.data_ptr(), output.data_ptr(), M, N, K);
+
+    return output;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor a, torch::Tensor b);"
+)
+```

@@ -1,0 +1,53 @@
+
+
+To optimize the matrix multiplication operation using a custom CUDA kernel, we fuse the matrix multiplication and activation functions into a single kernel to maximize efficiency. The kernel will handle the element-wise multiplication, summation, and application of the activation function in a single step.
+
+The custom CUDA source code implements a fused matmul and activation operation optimized for NVIDIA GPUs. It utilizes shared memory to improve performance and supports multiple threads per block for efficient parallel execution.
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_activation_kernel(const float* A, const float* B, float* out, int M, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        float sum = 0.0f;
+        shared memory<SMaryn> SH;
+        SH.d = (A + i * N) * B + i;
+        __syncthreads();
+        for (int j = 0; j < N; j++) {
+            sum += SH.d[j];
+        }
+        __syncthreads();
+        out[i] = sum > 0 ? sum : 0;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    int N = B.size(1);
+    
+    auto C = torch::zeros(M, N, K);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = ((M + threadsPerBlock - 1) / threadsPerBlock) * ((N + threadsPerBlock - 1) / threadsPerBlock);
+
+    matmul_activation_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N);
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = A.size(1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = ((M + threadsPerBlock - 1) / threadsPerBlock) * ((N + threadsPerBlock - 1) / threadsPerBlock);
+    auto C = torch::zeros(M, N, K);
+    matmul_activation_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, N);
+    return C;
+}
+"""
+```

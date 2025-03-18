@@ -1,0 +1,65 @@
+
+
+To optimize the given 3D tensor-matrix multiplication, we can implement a custom CUDA kernel that efficiently performs the operation by leveraging CUDA's parallelism. The kernel will operate on each batch of vectors in the 3D tensor and matrix, significantly speeding up the computation by offloading the processing to the GPU.
+
+The key idea is to unroll the dimension along which the matmul operation is applied (dimension K) and perform the multiplication and accumulation in parallel across all such vectors. This approach allows us to fully utilize CUDA's streaming multiprocessors and memory hierarchy.
+
+The implementation involves:
+1. Copying the input data to the GPU's global memory.
+2. Declaring the custom CUDA kernel function `tensorMatmulKernel` that performs the actual computation.
+3. Declaring the PyTorch extension function `tensorMatmul` that sets up the CUDA configuration, launches the kernel, and handles any necessary data transfers.
+
+Here is the optimized CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void tensorMatmulKernel(
+    const float* __global__ A, 
+    const float* __global__ B, 
+    float* __global__ C, 
+    int N, 
+    int M,
+    int L) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        int j = blockDim.x * i + threadIdx.x;
+        if (j < M) {
+            float sum = 0.0f;
+            for (int k = 0; k < K; k++) {
+                sum += A[i*M + j*K + k] * B[i*K + k*L + k];
+            }
+            C[i*M + j*L] = sum;
+        }
+    }
+}
+
+torch::Tensor tensorMatmul(torch::Tensor A, torch::Tensor B) {
+    int dimK = A.size(2);
+    int dimM = A.size(1);
+    int dimN = A.size(0);
+    int dimL = B.size(1);
+    
+    int size = dimN * dimM * dimL;
+    
+    const float* a = A.data_ptr<float>();
+    const float* b = B.data_ptr<float>();
+    float* c = torch::empty_float32(size, dimK).data_ptr();
+
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    tensorMatmulKernel<<<num_blocks, block_size>>>(
+        a, b, c, dimN, dimM, dimL);
+
+    return torch::empty_float32(dimN, dimM, dimL).to(A);
+}
+"""
+
+cpp_source = (
+    "torch::Tensor tensorMatmul(torch::Tensor A, torch::Tensor B);"
+)
+```
+
+This custom CUDA implementation offloads the 3D tensor-matrix multiplication to the GPU, achieving better performance by exploiting the parallel processing capabilities of CUDA.

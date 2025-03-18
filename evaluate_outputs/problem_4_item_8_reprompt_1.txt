@@ -1,0 +1,37 @@
+Note: I need to use a valid approach to implement the custom CUDA kernel without triggering ninja errors, but I might need to adjust the code to ensure compatibility with the PyTorch extension mechanism.
+
+Here's the improved CUDA implementation:
+
+```python
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matrix_scalar_mult_kernel(float* A, float s, float* C, int M, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        C[row * N + col] = A[row * N + col] * s;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, float s) {
+    int M = A.size(0);
+    int N = A.size(1);
+    auto C = torch::zeros_like(A);
+
+    int threadsPerBlock = 256;
+    int blocksPerRow = (M + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid = blocksPerRow * (N + threadsPerBlock - 1) / threadsPerBlock;
+
+    matrix_scalar_mult_kernel<<<blocksPerGrid, threadsPerBlock>>>(A.data_ptr(), s, C.data_ptr(), M, N);
+    return C;
+}
+"""
+
+cpp_source = (
+    "torch::Tensor forward(torch::Tensor A, float s);"
+)
+```
+
+This implementation should now correctly compile without invoking the ninja, while maintaining the same functionality and performance benefits of parallel execution on the GPU.

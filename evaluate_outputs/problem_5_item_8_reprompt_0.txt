@@ -1,0 +1,48 @@
+
+
+To optimize the given model, I'll implement a custom CUDA kernel for matrix multiplication (GEMM) that's more efficient than the default PyTorch implementation. This custom kernel will allow for better compilation and performance, especially for large matrices.
+
+Here's the optimized CUDA source:
+
+```cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void gemm_kernel(const float* A, const float* B, float* C,
+                           int M, int N, int K, int pitch) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    float C_val = 0.0f;
+
+    for (int k = 0; k < K; ++k) {
+        C_val += A[row * pitch + k] * B[k * blockDim.x + col];
+    }
+    C[col * pitch + row] = C_val;
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int N = B.size(1);
+    int K = B.size(0);
+
+    auto pitch = A.stride(1);
+    auto out = torch::empty(M, N, {M, N}, A.kinds(), {A.stride(0), A.stride(1), pitch, B.stride(1)});
+
+    const int block_size = 256;
+    const int num_row_blocks = (M + block_size - 1) / block_size;
+    const int num_col_blocks = (N + block_size - 1) / block_size;
+
+    gemm_kernel<<<num_row_blocks, num_col_blocks, block_size, block_size>>>(
+        A.data_ptr(), B.data_ptr(), out.data_ptr(), M, N, K, pitch);
+
+    return out;
+}
+"""
+```
+
+The C++ source remains the same as the original model:
+
+```cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B);
+"""
+```

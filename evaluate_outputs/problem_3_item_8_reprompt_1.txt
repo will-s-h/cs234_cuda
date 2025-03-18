@@ -1,0 +1,58 @@
+Okay, I'll make sure to structure it correctly this time.
+</think>
+
+```
+cuda_source = """
+#include <torch/extension.h>
+#include <cuda_runtime.h>
+
+__global__ void matmul_vector_kernel(const float* d_A, const float* d_B, float* d_C, int M, int K) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < M) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k) {
+            sum += d_A[idx * K + k] * d_B[k];
+        }
+        d_C[idx] = sum;
+    }
+}
+
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    if (B.size(0) != K) {
+        return torch::empty(0);
+    }
+    
+    int size = M;
+    auto C = torch::zeros(1, size, sizeof(float));
+    
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_vector_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K);
+
+    return C;
+}
+"""
+
+cpp_source = """
+torch::Tensor forward(torch::Tensor A, torch::Tensor B) {
+    int M = A.size(0);
+    int K = A.size(1);
+    if (B.size(0) != K) {
+        return torch::empty(0);
+    }
+    
+    int size = M;
+    auto C = torch::zeros(1, size, sizeof(float));
+    
+    const int block_size = 256;
+    const int num_blocks = (size + block_size - 1) / block_size;
+
+    matmul_vector_kernel<<<num_blocks, block_size>>>(A.data_ptr(), B.data_ptr(), C.data_ptr(), M, K);
+    
+    return C;
+}
+"""
+```
